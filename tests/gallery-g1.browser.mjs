@@ -16,6 +16,7 @@ async function widthCheck(p){
 }
 try{
  await ready();await page.goto(url,{waitUntil:'domcontentloaded'});
+ await page.locator('[data-view="today"]').last().click();
  await page.getByText('No trip scheduled').waitFor();
  await widthCheck(page);
  await page.locator('[data-view="trips"]').last().click();
