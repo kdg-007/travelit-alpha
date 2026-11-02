@@ -31,7 +31,9 @@ try{
  await page.getByText('Snacks').first().waitFor();
  assert.equal(await page.locator('.packing-table tbody tr').filter({hasText:'Road food'}).count(),2);
  await page.locator('[data-action="packing-mindmap"]').click();
- const reopened=page.locator('[data-pack-tree-branch]').filter({has:page.locator('[data-pack-tree-group][value="Road food"]')});
+ const branchIndex=await page.locator('[data-pack-tree-group]').evaluateAll(nodes=>nodes.findIndex(input=>input.value==='Road food'));
+ assert.ok(branchIndex>=0,'Custom group must remain available after reopening');
+ const reopened=page.locator('[data-pack-tree-branch]').nth(branchIndex);
  await reopened.waitFor();
  assert.match(await reopened.innerText(),/2 on your list/);
  await reopened.locator('[data-pack-tree-item]').first().fill('Biscuits');
