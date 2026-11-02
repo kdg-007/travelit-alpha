@@ -633,12 +633,12 @@ function photoImportEditor(){
    const title=file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,150)||'Family memory';
    records.push(normalizePhoto({title,image,placeId:f.placeId,tripId:f.tripId,photoDate:f.photoDate},now));
   }
+  state.photoFilter='photos';
   await writeLocally(()=>guardedSaveRecords(state.db,'photo',records,{
    expectedEpoch:modalBaseEpoch,expectedWorkspaceRevision:modalBaseRevisions.__workspaceRevision,
    expectedRevisionByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,0])),
    expectedPresenceByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,false]))
   }));
-  state.photoFilter='photos';
  },'Save photos');
 }
 function photoEditEditor(id){
