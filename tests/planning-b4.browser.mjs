@@ -46,8 +46,11 @@ try{
  assert.match(await page.locator('#main').innerText(),/₱15,000/);
  await page.locator('[data-trip-tab="packing"]').click();
  await page.locator('[data-action="packing-mindmap"]').click();
- await page.locator('textarea[name=packmap0]').fill('License\nFlashlight');
- await page.locator('textarea[name=packmap2]').fill('First aid');
+ const docs=page.locator('[data-pack-tree-branch]').first();
+ await docs.locator('[data-pack-tree-item]').first().fill('License');
+ await docs.locator('[data-pack-tree-item]').first().press('Enter');
+ await docs.locator('[data-pack-tree-item]').nth(1).fill('Flashlight');
+ await page.locator('[data-pack-tree-branch]').nth(2).locator('[data-pack-tree-item]').first().fill('First aid');
  await page.locator('#modal-form button[type=submit]').click();
  await page.getByText('Flashlight').waitFor();
  await page.locator('[data-view="explore"]').last().click();
