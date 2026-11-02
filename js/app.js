@@ -366,17 +366,18 @@ function renderExplore(){
  const filters=['All',...PLACE_CATEGORIES],statuses=['All',...DISCOVERY_STAGES];
  const counts=discoveryCounts(state.places);
  const match=state.places.filter(p=>(state.category==='All'||state.category===p.category)&&(state.stageFilter==='All'||state.stageFilter===(p.stage||'Idea'))&&[p.name,p.notes,p.sourceUrl].join(' ').toLowerCase().includes(state.search.toLowerCase()));
- const featured=state.places.find(p=>p.coverImage)||state.places[0]||null;
- const cover=featured?.coverImage?'<div class="explore-feature-photo">'+placeCover(featured)+'</div>':'<div class="explore-feature-art" aria-hidden="true"><span>✧</span></div>';
- return '<div class="editorial-explore"><section class="explore-feature"><div class="explore-feature-copy"><span class="eyebrow">OUR NEXT DISCOVERY</span><h2>Somewhere worth going.</h2>'
-  +'<p>'+(featured?'A growing collection of places for the journeys ahead.':'Save the places, reels, and ideas that catch your eye.')+'</p>'
-  +'<div class="action-line">'+action('+ Save a place','add-place','button button-primary button-small')+action('View map','show-map','button button-small')+'</div></div>'+cover+'</section>'
-  +'<section class="explore-collection"><div class="journal-heading"><div><span class="eyebrow">YOUR COLLECTION</span><h2>Places to remember</h2></div><span class="count-label">'+state.places.length+' saved</span></div>'
+ const featured=match.find(p=>p.coverImage)||null;
+ const rest=featured?match.filter(p=>p.id!==featured.id):match;
+ const feature=featured?'<section class="explore-feature"><div class="explore-feature-copy"><span class="eyebrow">'+esc(featured.category)+'</span><h2>'+esc(featured.name)+'</h2>'
+  +(featured.notes?'<p>'+esc(featured.notes)+'</p>':'')+'<div class="action-line">'+action('View place','place:'+featured.id,'button button-primary button-small')+
+  action('Add to trip','plan-place:'+featured.id,'button button-small')+'</div></div><div class="explore-feature-photo">'+placeCover(featured)+'</div></section>':'';
+ return '<div class="editorial-explore"><section class="explore-collection"><div class="library-toolbar"><div><h2>Saved places</h2><span class="count-label">'+state.places.length+' saved</span></div><div class="action-line">'+action('Map','show-map','button button-small')+action('+ Save','add-place','button button-primary button-small')+'</div></div>'
   +'<div class="search-row compact-search"><input class="search-input" id="explore-search" placeholder="Search places and saved links" aria-label="Search saved discoveries" value="'+esc(state.search)+'"><select id="category-filter" aria-label="Filter destination category">'+selOptions(filters,state.category)+'</select></div>'
   +(state.places.length?'<div class="inbox-stages compact-stage" role="group" aria-label="Filter idea status">'+statuses.map(st=>'<button type="button" class="stage-chip '+(state.stageFilter===st?'active':'')+'" data-stage-filter="'+esc(st)+'" aria-pressed="'+(state.stageFilter===st)+'">'+esc(st)+' <span>'+(st==='All'?state.places.length:counts[st])+'</span></button>').join('')+'</div>':'')
-  +(match.length?'<div class="story-grid editorial-story-grid">'+match.map(p=>'<article class="story-card editorial-story-card"><button type="button" class="story-cover" data-action="place:'+esc(p.id)+'" aria-label="View '+esc(p.name)+'">'+placeCover(p)+'</button><div class="story-content"><div class="story-meta"><span>'+esc(p.category)+'</span><span>'+esc(p.stage||'Idea')+'</span></div><h3>'+esc(p.name)+'</h3>'
+  +feature
+  +(rest.length?'<div class="story-grid editorial-story-grid">'+rest.map(p=>'<article class="story-card editorial-story-card"><button type="button" class="story-cover" data-action="place:'+esc(p.id)+'" aria-label="View '+esc(p.name)+'">'+placeCover(p)+'</button><div class="story-content"><div class="story-meta"><span>'+esc(p.category)+'</span><span>'+esc(p.stage||'Idea')+'</span></div><h3>'+esc(p.name)+'</h3>'
   +(p.notes?'<p>'+esc(p.notes)+'</p>':'')+'<div class="story-actions">'+action('View','place:'+p.id,'button button-small')+action('+ Trip','plan-place:'+p.id,'button button-small')+(p.sourceUrl?link('Original link',p.sourceUrl):'')+'</div></div></article>').join('')+'</div>':
-  '<div class="editorial-empty"><h3>'+(state.places.length?'No matching places':'Your next chapter starts here.')+'</h3>'+(!state.places.length?action('+ Save a place','add-place','button button-primary button-small'):'')+'</div>')
+  !featured?'<div class="editorial-empty"><h3>'+(state.places.length?'No matching places':'No places saved yet')+'</h3>'+(!state.places.length?action('+ Save a place','add-place','button button-primary button-small'):'')+'</div>':'')
   +'</section></div>';
 }
 function activePack(){return state.mapPacks.find(p=>p.id===state.activePackId)||null;}
