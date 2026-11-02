@@ -45,6 +45,7 @@ try{
  assert.equal(await page.locator('.photo-story img').count(),1);
  await page.reload({waitUntil:'networkidle'});
  await page.locator('[data-view="trips"]').last().click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  assert.equal(await page.locator('.itinerary-table tr[data-stop-id]:not([data-stop-id=""])').count(),2,'persistent stops');
  await page.locator('[data-view="more"]').last().click();
  const downloadPromise=page.waitForEvent('download');
