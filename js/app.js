@@ -605,9 +605,62 @@ function renderPacking(compact=false){
  ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.group||i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
  <h3 class="packing-add-title">Add multiple items</h3><div class="sheet-scroll"><table class="packing-table packing-entry"><thead><tr><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Person</th></tr></thead><tbody id="packing-draft-body">${Array.from({length:4},packingDraftRow).join('')}</tbody></table></div><div class="action-line">${action('+ Add row','packing-add-row','button button-small')}${action('Save all new items','packing-save-rows','button button-primary button-small')}</div><p class="tiny muted">Fill several rows, then save them together. Your list stays available on this device.</p></section>`;
 }
+function photoImportEditor(){
+ const tripOptions='<option value="">No trip</option>'+state.trips.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===state.selectedTrip?'selected':'')+'>'+esc(t.title)+'</option>').join('');
+ const placeOptions='<option value="">No place</option>'+state.places.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ const markup='<div class="photo-upload-form"><label class="photo-file-drop"><strong>Choose photos</strong><span>Up to 8 at a time</span><input id="f-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>'
+  +'<div class="form-grid">'+field('photoDate','Date (optional)','', 'date')
+  +'<div class="field"><label for="f-photo-trip">Trip (optional)</label><select id="f-photo-trip" name="tripId">'+tripOptions+'</select></div>'
+  +'<div class="field full"><label for="f-photo-place">Saved place (optional)</label><select id="f-photo-place" name="placeId">'+placeOptions+'</select></div></div></div>';
+ openModal('Add to photo stories',markup,async f=>{
+  const selectedFiles=Array.from($('#f-photos')?.files||[]);
+  if(!selectedFiles.length||selectedFiles.length>8)throw Error('Choose 1 to 8 photos.');
+  if(state.photos.length+selectedFiles.length>120)throw Error('This local collection supports up to 120 compressed photos.');
+  const now=new Date().toISOString(),records=[];
+  for(const file of selectedFiles){
+   const image=await imageCoverFromFile(file);
+   const title=file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,150)||'Family memory';
+   records.push(normalizePhoto({title,image,placeId:f.placeId,tripId:f.tripId,photoDate:f.photoDate},now));
+  }
+  await writeLocally(()=>guardedSaveRecords(state.db,'photo',records,{
+   expectedEpoch:modalBaseEpoch,expectedWorkspaceRevision:modalBaseRevisions.__workspaceRevision,
+   expectedRevisionByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,0])),
+   expectedPresenceByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,false]))
+  }));
+  state.photoFilter='photos';
+ },'Save photos');
+}
+function photoEditEditor(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ const options=(items,selected)=>'<option value="">None</option>'+items.map(v=>'<option value="'+esc(v.id)+'" '+(selected===v.id?'selected':'')+'>'+esc(v.title||v.name)+'</option>').join('');
+ const markup='<div class="photo-edit-cover"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"></div><div class="form-grid">'
+  +field('title','Title',p.title,'text','required maxlength="150"')
+  +field('photoDate','Date',p.photoDate||'','date')
+  +textArea('caption','Caption',p.caption||'')
+  +'<div class="field"><label for="f-tripId">Trip</label><select id="f-tripId" name="tripId">'+options(state.trips,p.tripId)+'</select></div>'
+  +'<div class="field"><label for="f-placeId">Place</label><select id="f-placeId" name="placeId">'+options(state.places,p.placeId)+'</select></div></div>';
+ openModal('Edit photo',markup,async f=>{
+  await commit('photo',normalizePhoto({...p,...f,id:p.id,createdAt:p.createdAt}));
+ },'Save');
+}
+function photoDetails(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ openModal(p.title,'<div class="photo-lightbox"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"><h3>'+esc(p.title)+'</h3>'
+  +(p.caption?'<p>'+esc(p.caption)+'</p>':'')
+  +'<div class="action-line">'+action('Edit','photo-edit:'+p.id,'button button-small')
+  +action('Remove','photo-delete:'+p.id,'button button-small button-danger')+'</div></div>');
+}
 function renderPhotos(){
- const covers=state.places.filter(p=>p.coverImage);
- return covers.length?`<div class="library-toolbar"><div><span class="count-label">${covers.length} saved covers</span></div>${action('Saved places','go-explore','button button-small')}</div><div class="photo-story-grid">${covers.map(p=>`<button class="photo-story" data-action="place:${esc(p.id)}" aria-label="View ${esc(p.name)}">${placeCover(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>`:`<section class="empty-essentials"><strong>No photos yet</strong><span>Add a cover to a saved place.</span>${action('Browse places','go-explore','button button-primary button-small')}</section>`;
+ const items=galleryItems(state.photos,state.places,state.photoFilter,state.selectedTrip);
+ const all=galleryItems(state.photos,state.places);
+ const tabs=[['all','All'],['photos','Memories'],['places','Saved places']];
+ const filters='<div class="photo-filters">'+tabs.map(pair=>action(pair[1],'photo-filter:'+pair[0],'photo-filter'+(state.photoFilter===pair[0]?' active':''))).join('')+'</div>';
+ const cards=items.map((p,index)=>'<button type="button" class="photo-story editorial-photo '+(index%5===0?'large':'')+'" data-action="'+(p.kind==='cover'?'place:':'photo-open:')+esc(p.id)+'" aria-label="View '+esc(p.title)+'"><img src="'+esc(p.image)+'" loading="lazy" alt=""><span class="photo-caption"><small>'+esc(p.kind==='cover'?'Saved place':p.photoDate||'Our moments')+'</small><strong>'+esc(p.title)+'</strong></span></button>').join('');
+ return '<div class="editorial-gallery"><section class="editorial-gallery-head"><span class="eyebrow">OUR PHOTO STORIES</span><h2>The moments we keep.</h2><p>'+all.length+' '+(all.length===1?'memory':'memories')+' and saved views</p><div class="action-line">'+action('+ Add photos','photo-add','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>'
+  +filters+(items.length?'<div class="photo-story-grid editorial-photo-grid">'+cards+'</div>':
+   '<div class="editorial-empty"><span class="eyebrow">THE COLLECTION</span><h3>Every story starts somewhere.</h3><p>Bring in a photo or save a place worth revisiting.</p>'
+   +action('+ Add photos','photo-add','button button-primary button-small')+'</div>')
+  +'</div>';
 }
 function renderMoreTechnical(){return `${section('Library & settings','Your data stays in this local TravelIt workspace')}<div class="grid2"><div class="card"><h3>Local backup and recovery</h3><p class="subtext">Export TravelIt domain records, including any external KeepIt reference links, and local-only change history as JSON. This does not export the actual KeepIt notes, embedded assets, or verified sync receipts. Do not include sensitive documents: this backup is <strong>not encrypted</strong>.</p><div class="action-line">${action('Export backup','export-backup','button button-primary button-small')}${action('Restore backup','import-backup')}</div>${state.recovery?`<div class="alert blue" style="margin-top:12px"><strong>Previous workspace available</strong><p class="subtext">Snapshot created ${esc(state.recovery.savedAt)} · ${state.recovery.records} records</p><div class="action-line">${action('Undo last restore','undo-restore','button button-small')}</div></div>`:''}<div class="divider"></div><p class="tiny muted">Never clear browser data, uninstall the PWA, or switch devices without exporting and verifying a backup. Browser storage is not guaranteed permanent.</p></div><div class="card"><h3>Local data diagnostics</h3><div class="divider"></div><h4>Offline startup check</h4><p class="subtext">Verify that every application-shell file is actually cached. A registered service worker alone does not prove offline availability.</p><div class="action-line">${action('Verify offline shell','verify-offline-shell','button button-primary button-small')}</div>${state.shellReport?`<div role="status" class="alert ${state.shellReport.ready?'blue':'red'}" style="margin-top:10px"><b>${state.shellReport.ready?'Cached for this browser':'Offline shell not verified'}</b><p>${esc(state.shellReport.cached)}/${esc(state.shellReport.total)} required files cached · ${esc(state.shellReport.reason)}</p>${state.shellReport.missing.length?`<p class="tiny">Missing: ${esc(state.shellReport.missing.slice(0,5).join(', '))}${state.shellReport.missing.length>5?' …':''}</p>`:''}</div>`:'<p class="subtext">Not checked yet. This app does not claim offline readiness merely because it has a service worker.</p>'}<div class="divider"></div><p class="subtext">Checks this browser's database for successful temporary write/readback and scans existing records for broken references. This does not prove data survives device clearing or confirm cloud sync.</p><div class="action-line">${action('Run local diagnostic','run-local-diagnostic','button button-primary button-small')}</div>${state.storageHealth?`<div class="alert ${state.storageHealth.ok?'blue':'red'}" style="margin-top:10px">${esc(state.storageHealth.message)}</div>`:''}${state.localAudit?`<p class="subtext" style="margin-top:10px">${state.localAudit.recordCount} records · ${state.localAudit.errors} error(s) · ${state.localAudit.warnings} warning(s) · ${state.localAudit.commandCount} local-only changes</p>${state.localAudit.issues.length?`<ul class="offline-warnings">${state.localAudit.issues.slice(0,15).map(i=>`<li>${esc(i.code)}: ${esc(i.detail)} (${esc(i.entity)})</li>`).join('')}</ul>${state.localAudit.issues.length>15?'<p>Additional issues omitted from this view.</p>':''}`:'<p class="subtext">No relationship problems detected in the scanned records.</p>'}`:''}<p class="tiny muted">Backups are still required. A successful probe proves only immediate write/readback on this device.</p></div><div class="card"><h3>Integration status</h3><div class="row-between" style="margin-top:13px"><span>KeepIt Notes and document assets</span><span class="tag yellow">Not connected</span></div><p class="tiny muted">${state.keepitAssociations.length} saved native-note reference(s), if any, are external dependencies—not backed-up note content. Native notes are not connected in this standalone version.</p><div class="row-between" style="margin-top:13px"><span>LiveIt calendar</span><span class="tag yellow">Not connected</span></div><div class="row-between" style="margin-top:13px"><span>Offline GeoJSON reference maps</span><span class="tag ${activePack()?'':'yellow'}">${activePack()?'Imported locally':'No map loaded'}</span></div><div class="divider"></div><p class="subtext">${state.outbox.length} local change command(s) retained, not synchronized. Do not interpret this count as pending successful cloud delivery.</p></div><div class="card"><h3>Photo library</h3><div class="photo-placeholder" aria-hidden="true">▧</div><p class="subtext">The full travel-photo gallery will link to KeepIt media after the approved read-only bridge is verified. No personal images are imported into this local foundation.</p></div><div class="card"><h3>Travel documents</h3><div class="alert red" style="margin:13px 0"><b>Do not import passports, IDs, or tickets here.</b> Protected KeepIt previews, encryption at rest, and device authentication are required before this feature can be enabled.</div><p class="subtext">The document-wallet contract is in the specification package; this build contains no insecure substitute.</p></div>${renderVehicles()}</div>`;}
 function renderMore(){
@@ -808,6 +861,11 @@ function currentMapBounds(){
  return (pack?.regionAtlas||pack?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(pack.bounds):mapBounds(all);
 }
 async function handler(target){const actionName=target.dataset.action;if(!actionName)return;try{
+  if(actionName==='photo-add'){photoImportEditor();return;}
+  if(actionName.startsWith('photo-filter:')){state.photoFilter=actionName.slice(13);render();return;}
+  if(actionName.startsWith('photo-open:')){photoDetails(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-edit:')){photoEditEditor(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-delete:')){const id=actionName.slice(13);if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',id);}return;}
   if(actionName==='schedule-reflow'){previewScheduleReflow();return;}
   if(actionName.startsWith('itinerary-mode:')){state.itineraryDisplay=actionName.slice(15)==='table'?'table':'timeline';render();return;}
   if(actionName.startsWith('timeline-open:')){const v=state.stops.find(x=>x.id===actionName.slice(14));if(!v)throw Error('Activity not found');stopEditor(v);return;}
