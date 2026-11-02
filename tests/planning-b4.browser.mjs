@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 const port=8569,url='http://127.0.0.1:'+port+'/';
 const srv=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1'],{stdio:'ignore'});
 async function waitReady(){for(let n=0;n<35;n++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,250));}throw Error('Test server unavailable');}
 const browser=await chromium.launch({headless:true});
-const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,acceptDownloads:true});
 const page=await ctx.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
@@ -53,6 +54,19 @@ try{
  await page.locator('[data-action="show-map"]').first().click();
  await page.locator('.map-online-frame iframe').waitFor();
  assert.match(await page.locator('.map-advanced summary').innerText(),/Offline maps/);
+ await page.locator('[data-view="more"]').last().click();
+ const downloadEvent=page.waitForEvent('download');
+ await page.locator('[data-action="export-backup"]').first().click();
+ const downloaded=await downloadEvent;
+ const backup=JSON.parse(readFileSync(await downloaded.path(),'utf8'));
+ const budget=backup.records.find(r=>r.type==='expense'&&r.data?.label==='Hotel test');
+ assert.ok(budget,'budget included in local backup');
+ assert.equal(budget.data.plannedFormula,'=3000*5');
+ assert.equal(budget.data.plannedPhp,15000);
+ const vehicle=backup.records.find(r=>r.type==='vehicle'&&r.data?.name==='Family car');
+ assert.equal(vehicle?.data.make,'MG');
+ assert.equal(vehicle?.data.model,'MG6');
+ assert.ok(backup.records.some(r=>r.type==='packing'&&r.data?.label==='Flashlight'));
  assert.equal(errors.length,0,'Unexpected errors: '+errors.join(' | '));
  console.log('B4_BROWSER_PASS: Prepare, correct vehicle editor, budget formula, mind-map packing, online map fallback');
 }finally{await ctx.close();await browser.close();srv.kill();}
