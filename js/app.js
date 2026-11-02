@@ -191,7 +191,7 @@ async function noteEditor(existing=null,targetType='general',targetId=null){
   await store();
   if(failed)throw failed;
  };
- openModal(existing?'Edit note':'New note',markup,async()=>{await flush();},'Done');
+ openModal(existing?'Edit note':'New note',markup,async()=>{await flush();render();},'Done');
  $('#f-content').value=initial.content;
  const form=$('#modal-form');
  form.addEventListener('input',()=>{
