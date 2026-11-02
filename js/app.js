@@ -176,9 +176,10 @@ function renderVehicles(){return `<div class="card"><div class="row-between wrap
 function packingMindmapEditor(){
  const trip=selected();if(!trip)return toast('Choose a trip first.',true);
  const nodes=[
-  ['Essentials','Documents & essentials'],['Clothing','Clothing & footwear'],
-  ['Personal care','Health & toiletries'],['Electronics','Electronics'],
-  ['Family','Family & children'],['Other','Food, gear & extras']
+  ['Essentials','Documents & essentials'],['Clothing','Clothing & trail gear'],
+  ['Personal care','First aid & toiletries'],['Electronics','Electronics & navigation'],
+  ['Family','Family & child gear'],['Other','Shelter & sleep'],
+  ['Other','Cooking & food'],['Other','Other gear']
  ];
  const markup='<div class="packing-map" aria-label="Packing brainstorm"><div class="packing-map-center"><strong>'+esc(trip.title)+'</strong><span>What should we bring?</span></div><div class="packing-map-nodes">'
    +nodes.map(([category,title],index)=>'<label class="packing-map-node"><strong>'+esc(title)+'</strong><small>One item per line</small><textarea name="packmap'+index+'" rows="4" maxlength="3000" placeholder="Add ideas…"></textarea></label>').join('')
