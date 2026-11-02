@@ -32,7 +32,8 @@ try{
  await page.waitForTimeout(500);
  assert.equal(await page.locator('.itinerary-table tr[data-stop-id]:not([data-stop-id=""])').count(),2,'two saved stops');
  await page.locator('[data-view="explore"]').last().click();
- await page.locator('#quick-save').click();
+ await page.locator('[data-view="explore"]').last().click();
+ await page.locator('[data-action="add-place"]').first().click();
  await page.locator('#f-name').fill('Synthetic North Camp Beach');
  await page.locator('#f-sourceUrl').fill('https://example.com/synthetic-beach');
  await page.screenshot({path:'/tmp/travelit-b2-image.png'});
