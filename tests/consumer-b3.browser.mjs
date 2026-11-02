@@ -24,7 +24,7 @@ try{
  assert.equal(await page.getByText('No trip scheduled').count(),1);
  await page.locator('[data-view="trips"]').last().click();await page.locator('[data-action="new-trip"]').first().click();
  await page.locator('#f-title').fill('B3 QA weekend');await page.locator('#f-startDate').fill('2026-12-05');await page.locator('#f-endDate').fill('2026-12-07');
- await page.locator('#modal-form button[type=submit]').click();await page.locator('.itinerary-table').waitFor();await visibleInside('Itinerary');
+ await page.locator('#modal-form button[type=submit]').click();await page.locator('[data-action="itinerary-mode:table"]').click();await page.locator('.itinerary-table').waitFor();await visibleInside('Itinerary');
  const rects=await page.evaluate(()=>{const row=document.querySelector('.itinerary-table tbody tr');return Object.fromEntries(['time','title','durationMinutes'].map(f=>{const b=row.querySelector('[data-day-field="'+f+'"]').getBoundingClientRect();return [f,{left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:b.width}]}))});
  assert.ok(rects.time.width>=90&&rects.title.width>=150,JSON.stringify(rects));
  assert.ok(rects.title.bottom <= rects.time.top,`Overlapping itinerary controls ${JSON.stringify(rects)}`);
