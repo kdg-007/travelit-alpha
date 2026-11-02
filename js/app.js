@@ -6,6 +6,7 @@ import {VEHICLE_TYPES,EXPENSE_CATEGORIES,normalizeVehicle,normalizeExpense,tripC
 import {openDatabase,allData,guardedSaveRecord,guardedSaveRecords,guardedDeleteRecord,getWorkspaceMetadata,restore,recoveryInfo,undoRestore,listMapPacks,putMapPack,deleteMapPack,listAtlasRegions,putAtlasRegion,getAtlasTiles,deleteAtlasRegion,getSetting,setActiveMapPack} from './db.js';
 import {PACKING_TEMPLATES,prepareTemplateImport} from './packing-templates.js';
 import {persistPackingToggle} from './packing-interaction.js';
+import {STARTER_BRANCHES,addPackingBranch,wirePackingTree,collectPackingTree} from './packing-tree.js';
 import {normalizeAnnotation,exactCoordinatesFromLink,assessOfflineTrip,mapBounds} from './map-tools.js';
 import {mapMarkup,mapClickToGeo} from './map-view.js';
 import {normalizeLocalNote,previewNote,linkedNotes} from './local-notes.js';
@@ -308,31 +309,13 @@ function renderVehicles(){return `<div class="card"><div class="row-between wrap
  */
 function packingMindmapEditor(){
  const trip=selected();if(!trip)return toast('Choose a trip first.',true);
- const nodes=[
-  ['Essentials','Documents & essentials'],['Clothing','Clothing & trail gear'],
-  ['Personal care','First aid & toiletries'],['Electronics','Electronics & navigation'],
-  ['Family','Family & child gear'],['Other','Shelter & sleep'],
-  ['Other','Cooking & food'],['Other','Other gear']
- ];
- const markup='<div class="packing-map" aria-label="Packing brainstorm"><div class="packing-map-center"><strong>'+esc(trip.title)+'</strong><span>What should we bring?</span></div><div class="packing-map-nodes">'
-   +nodes.map(([category,title],index)=>'<label class="packing-map-node"><strong>'+esc(title)+'</strong><small>One item per line</small><textarea name="packmap'+index+'" rows="4" maxlength="3000" placeholder="Add ideas…"></textarea></label>').join('')
-   +'</div></div>';
- openModal('Plan your packing',markup,async(_f,form)=>{
-  const existing=new Set(byTrip(state.packing).map(x=>x.label.trim().toLocaleLowerCase('en')));
-  const rows=[];
-  nodes.forEach(([category],index)=>{
-   const value=form.elements.namedItem('packmap'+index)?.value||'';
-   for(const raw of value.split(/\r?\n/)){
-    const label=raw.trim().replace(/^[•*\-\s]+/,'').trim();
-    if(!label)continue;
-    const key=label.toLocaleLowerCase('en');
-    if(existing.has(key))continue;
-    existing.add(key);rows.push({label,category,quantity:1});
-   }
-  });
-  if(!rows.length)throw Error('Add at least one new item.');
-  if(rows.length>60)throw Error('Generate up to 60 items at a time.');
-  const records=rows.map(row=>normalizePacking(row,trip));
+ const markup='<div id="packing-tree" class="packing-map" aria-label="Packing idea tree"><div class="pack-tree-trunk"><strong>'+esc(trip.title)+'</strong><span>Packing ideas</span></div>'
+  +'<div class="pack-tree-stage"><div class="pack-tree-branches" data-pack-tree-branches></div></div><div class="pack-tree-bottom">'
+  +action('+ Group','pack-tree-new-group','button button-small','data-pack-tree-add-branch')+'</div></div>';
+ openModal('Plan your packing',markup,async()=>{
+  const result=collectPackingTree($('#packing-tree'),byTrip(state.packing));
+  if(!result.items.length)throw Error('Add a new packing item to create the checklist.');
+  const records=result.items.map(row=>normalizePacking(row,trip));
   await writeLocally(()=>guardedSaveRecords(state.db,'packing',records,{
    expectedEpoch:modalBaseEpoch,
    expectedRevisionByKey:Object.fromEntries(records.map(x=>['packing:'+x.id,0])),
@@ -340,6 +323,21 @@ function packingMindmapEditor(){
   }));
   state.tripTab='packing';render();
  },'Generate checklist');
+ const tree=$('#packing-tree'),branches=tree.querySelector('[data-pack-tree-branches]');
+ for(const spec of STARTER_BRANCHES){
+  const branch=addPackingBranch(branches,spec.group,spec.category);
+  const saved=byTrip(state.packing).filter(x=>(x.group||'')===spec.group||(!x.group&&x.category===spec.category));
+  if(saved.length){
+   const sample=document.createElement('div');
+   sample.className='pack-tree-existing';sample.textContent=saved.length+' already packed on your list';
+   branch.append(sample);
+  }
+ }
+ wirePackingTree(tree);
+ tree.addEventListener('click',e=>{
+  if(e.target.closest('button[data-pack-tree-add-branch],button[data-pack-tree-remove-branch],button[data-pack-tree-remove-item],button[data-pack-tree-add-item]'))modalDirty=true;
+ });
+ branches.querySelector('[data-pack-tree-item]')?.focus();
 }
 function packingTemplateEditor(){
  const trip=selected();if(!trip){toast('Create a trip first.',true);return;}
@@ -594,7 +592,7 @@ function renderPacking(compact=false){
  const t=selected();if(!t)return `${section('Packing','Choose a trip first')}<div class="placeholder"><b>Choose a trip to prepare a packing list.</b>${action('Open trips','open-trips')}</div>`;
  const items=byTrip(state.packing),packed=items.filter(p=>p.packed).length,pct=items.length?Math.round(100*packed/items.length):0;
  return `${!compact?section('Packing',esc(t.title)):''}<section class="card packing-sheet" aria-label="Packing table"><div class="row-between wrap"><div><h3>Packing for ${esc(t.title)}</h3><p class="subtext">${packed} of ${items.length} ready</p></div>${action('Mind map','packing-mindmap','button button-primary button-small')}${action('Use template','packing-template','button button-small')}</div><div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
- ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
+ ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.group||i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
  <h3 class="packing-add-title">Add multiple items</h3><div class="sheet-scroll"><table class="packing-table packing-entry"><thead><tr><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Person</th></tr></thead><tbody id="packing-draft-body">${Array.from({length:4},packingDraftRow).join('')}</tbody></table></div><div class="action-line">${action('+ Add row','packing-add-row','button button-small')}${action('Save all new items','packing-save-rows','button button-primary button-small')}</div><p class="tiny muted">Fill several rows, then save them together. Your list stays available on this device.</p></section>`;
 }
 function renderPhotos(){
