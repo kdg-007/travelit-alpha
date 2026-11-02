@@ -7,24 +7,64 @@ export function nonnegative(v,label,max=10000000,{nullable=false}={}){
   if(typeof v==='boolean'||String(v??'').trim()===''||!Number.isFinite(Number(v))||Number(v)<0||Number(v)>max)throw Error(`${label} must be between 0 and ${max}.`);
   return Number(v);
 }
+/** Arithmetic for local budget cells, never JavaScript evaluation.
+ * Supports +, -, *, /, parentheses and decimal numbers; no names/functions.
+ */
+export function parseBudgetEntry(input){
+ if(input===null||input===undefined||String(input).trim()==='')return null;
+ if(typeof input==='number'){if(!Number.isFinite(input))throw Error('Invalid amount.');return input;}
+ const raw=String(input).trim();
+ if(!raw.startsWith('=')){
+  if(!/^\d+(?:\.\d*)?$|^\.\d+$/.test(raw))throw Error('Enter a number or a formula such as =3000*5.');
+  return Number(raw);
+ }
+ const expression=raw.slice(1);
+ if(!expression||expression.length>120)throw Error('Budget formula must contain 1–120 characters.');
+ const tokens=[];const lexer=/\s*(\d+(?:\.\d*)?|\.\d+|[()+*/-])\s*/y;
+ for(let i=0;i<expression.length;){
+  lexer.lastIndex=i;const found=lexer.exec(expression);
+  if(!found||found.index!==i)throw Error('Formula supports numbers and + - * / ( ) only.');
+  tokens.push(found[1]);i=lexer.lastIndex;
+  if(tokens.length>80)throw Error('Formula is too long.');
+ }
+ let pos=0,depth=0;
+ const primary=()=>{
+  if(++depth>25)throw Error('Too many nested parentheses.');
+  let result;
+  if(tokens[pos]==='+'||tokens[pos]==='-'){const sign=tokens[pos++];result=(sign==='-'?-1:1)*primary();}
+  else if(tokens[pos]==='('){pos++;result=expr();if(tokens[pos++]!==')')throw Error('Missing closing parenthesis.');}
+  else {const token=tokens[pos++];if(token===undefined||!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(token))throw Error('Invalid formula number.');result=Number(token);}
+  depth--;return result;
+ };
+ const term=()=>{let value=primary();while(tokens[pos]==='*'||tokens[pos]==='/'){const op=tokens[pos++],right=primary();if(op==='/'&&right===0)throw Error('Cannot divide by zero.');value=op==='*'?value*right:value/right;}return value;};
+ const expr=()=>{let value=term();while(tokens[pos]==='+'||tokens[pos]==='-'){const op=tokens[pos++],right=term();value=op==='+'?value+right:value-right;}return value;};
+ const value=expr();
+ if(pos!==tokens.length||!Number.isFinite(value))throw Error('Invalid formula.');
+ if(value<0||value>100000000)throw Error('Formula result must be ₱0–₱100,000,000.');
+ return Math.round((value+Number.EPSILON)*100)/100;
+}
 export function normalizeVehicle(input,now=new Date().toISOString()){
-  const name=text(input.name,120);
-  if(!name)throw Error('Vehicle name is required.');
+  const make=text(input.make,80),model=text(input.model,100);
+  const nickname=text(input.nickname,120);
+  const name=nickname||[make,model].filter(Boolean).join(' ')||text(input.name,120);
+  if(!name)throw Error('Enter a make and model, or a vehicle name.');
   const type=VEHICLE_TYPES.includes(input.type)?input.type:'Gasoline';
   const kmL=nonnegative(input.kmPerLiter,'Fuel economy (km/L)',100,{nullable:true});
   if(kmL!==null&&kmL===0)throw Error('Fuel economy must be above 0 when set.');
   const price=nonnegative(input.fuelPricePhp,'Fuel price (₱/L)',500,{nullable:true});
-  return {id:input.id||crypto.randomUUID(),name,type,kmPerLiter:kmL,fuelPricePhp:price,notes:text(input.notes,900),createdAt:input.createdAt||now,updatedAt:now};
+  return {id:input.id||crypto.randomUUID(),name,nickname,make,model,type,kmPerLiter:kmL,fuelPricePhp:price,notes:text(input.notes,900),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function normalizeExpense(input,trip,now=new Date().toISOString()){
   const label=text(input.label,150);if(!label)throw Error('Expense description is required.');
   const date=input.date||null;
   const parsed=date?new Date(date+'T12:00:00Z'):null;
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<trip.startDate||date>trip.endDate||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date))throw Error('Expense date must be within the trip.');
-  const plannedPhp=nonnegative(input.plannedPhp,'Planned cost (₱)',100000000,{nullable:true});
-  const actualPhp=nonnegative(input.actualPhp,'Actual cost (₱)',100000000,{nullable:true});
+  const plannedFormula=typeof input.plannedPhp==='string'&&input.plannedPhp.trim().startsWith('=')?input.plannedPhp.trim():null;
+  const actualFormula=typeof input.actualPhp==='string'&&input.actualPhp.trim().startsWith('=')?input.actualPhp.trim():null;
+  const plannedPhp=nonnegative(parseBudgetEntry(input.plannedPhp),'Planned cost (₱)',100000000,{nullable:true});
+  const actualPhp=nonnegative(parseBudgetEntry(input.actualPhp),'Actual cost (₱)',100000000,{nullable:true});
   if(plannedPhp===null&&actualPhp===null)throw Error('Enter a planned or actual cost.');
-  return {id:input.id||crypto.randomUUID(),tripId:trip.id,date,label,category:EXPENSE_CATEGORIES.includes(input.category)?input.category:'Other',plannedPhp,actualPhp,notes:text(input.notes,1000),createdAt:input.createdAt||now,updatedAt:now};
+  return {id:input.id||crypto.randomUUID(),tripId:trip.id,date,label,category:EXPENSE_CATEGORIES.includes(input.category)?input.category:'Other',plannedPhp,actualPhp,plannedFormula,actualFormula,notes:text(input.notes,1000),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function normalizeLeg(input){
   const legDistanceKm=nonnegative(input.legDistanceKm,'Estimated driving distance (km)',100000,{nullable:true});
