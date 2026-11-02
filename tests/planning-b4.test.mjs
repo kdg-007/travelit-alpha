@@ -55,7 +55,7 @@ test('packing mind-map generates existing persisted checklist records',()=>{
  assert.match(css,/\.packing-map-nodes/);
 });
 test('recognizable map is online only, with offline tools separate',()=>{
- assert.match(app,/www\.openstreetmap\.org\/export\/embed\.html/);
+ assert.match(app,/mountLiveMap\(/);\n assert.match(app,/travelit-live-map/);
  assert.match(app,/Online map/);
  assert.match(app,/Offline maps and annotations/);
  assert.doesNotMatch(app,/tile\.openstreetmap\.org/);
