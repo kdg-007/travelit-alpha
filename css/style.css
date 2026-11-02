@@ -253,3 +253,6 @@
  .day-tools{max-width:100%}
  .day-strip{max-width:100%}
 }
+
+/* B3 hide duplicate mobile global Save; Explore already has an inline Save action. */
+@media(max-width:720px){.topbar .top-actions #quick-save{display:none!important}}
