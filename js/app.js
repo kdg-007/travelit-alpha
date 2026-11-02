@@ -661,6 +661,8 @@ function photoDetails(id){
   +(p.caption?'<p>'+esc(p.caption)+'</p>':'')
   +'<div class="action-line">'+action('Edit','photo-edit:'+p.id,'button button-small')
   +action('Remove','photo-delete:'+p.id,'button button-small button-danger')+'</div></div>');
+ $('#modal-body [data-action^="photo-edit:"]')?.addEventListener('click',()=>photoEditEditor(p.id));
+ $('#modal-body [data-action^="photo-delete:"]')?.addEventListener('click',async()=>{if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',p.id);}});
 }
 function renderPhotos(){
  const items=galleryItems(state.photos,state.places,state.photoFilter,state.selectedTrip);
