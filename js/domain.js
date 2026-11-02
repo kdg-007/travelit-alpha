@@ -13,10 +13,12 @@ export function normalizePlace(input, now = new Date().toISOString()){
   const name=cleanText(input.name,150), sourceUrl=cleanText(input.sourceUrl,2000);
   if(!name && !sourceUrl) throw Error('Enter a place name or a source link.');
   if(sourceUrl){try{const u=new URL(sourceUrl); if(!['https:','http:'].includes(u.protocol)) throw Error();}catch{throw Error('Source link must start with https:// or http://');}}
+  const coverImage=input.coverImage||'';
+  if(typeof coverImage!=='string'||(coverImage&&!/^data:image\/jpeg;base64,[a-zA-Z0-9+/=]+$/.test(coverImage))||coverImage.length>190000)throw Error('Invalid local cover image.');
   const hasLat=String(input.lat??'').trim()!=='' || String(input.lng??'').trim()!=='';
   if(hasLat && !validCoords(input.lat,input.lng)) throw Error('Enter valid latitude AND longitude, or leave both empty.');
   if(input.stage!==undefined && !DISCOVERY_STAGES.includes(input.stage)) throw Error('Unknown discovery stage.');
-  return {id:input.id||uid(),name:name||'Unidentified place', category:PLACE_CATEGORIES.includes(input.category)?input.category:'Other', stage:input.stage||'Idea', sourceUrl, lat:hasLat?Number(input.lat):null, lng:hasLat?Number(input.lng):null, notes:cleanText(input.notes,4000), createdAt:input.createdAt||now, updatedAt:now};
+  return {id:input.id||uid(),name:name||'Unidentified place', category:PLACE_CATEGORIES.includes(input.category)?input.category:'Other', stage:input.stage||'Idea', sourceUrl, coverImage, lat:hasLat?Number(input.lat):null, lng:hasLat?Number(input.lng):null, notes:cleanText(input.notes,4000), createdAt:input.createdAt||now, updatedAt:now};
 }
 export function normalizeTrip(input,now=new Date().toISOString()){
   const title=cleanText(input.title,150);
