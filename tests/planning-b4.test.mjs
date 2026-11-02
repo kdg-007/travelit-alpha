@@ -51,8 +51,8 @@ test('packing mind-map generates existing persisted checklist records',()=>{
  assert.match(app,/function packingMindmapEditor\(\)/);
  assert.match(app,/Generate checklist/);
  assert.match(app,/guardedSaveRecords\(state\.db,'packing',records/);
- assert.match(app,/packmap/);
- assert.match(css,/\.packing-map-nodes/);
+ assert.match(app,/collectPackingTree/);
+ assert.match(css,/\.pack-tree-branches/);
 });
 test('recognizable map is online only, with offline tools separate',()=>{
  assert.match(app,/mountLiveMap\(/);

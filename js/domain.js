@@ -52,7 +52,7 @@ export function normalizePacking(input,trip,now=new Date().toISOString()){
   const label=cleanText(input.label,150),qty=Number(input.quantity??1);
   if(!label) throw Error('Packing item name is required.');
   if(!Number.isInteger(qty)||qty<1||qty>999) throw Error('Quantity must be 1–999.');
-  return {id:input.id||uid(),tripId:trip.id,label,category:PACK_CATEGORIES.includes(input.category)?input.category:'Other',quantity:qty,packed:!!input.packed,owner:cleanText(input.owner,80),createdAt:input.createdAt||now,updatedAt:now};
+  return {id:input.id||uid(),tripId:trip.id,label,category:PACK_CATEGORIES.includes(input.category)?input.category:'Other',group:cleanText(input.group,70),quantity:qty,packed:!!input.packed,owner:cleanText(input.owner,80),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function wazeUrl(place){if(place?.lat===null||place?.lng===null||!validCoords(place?.lat,place?.lng)) return null;return `https://waze.com/ul?ll=${encodeURIComponent(place.lat+','+place.lng)}&navigate=yes`;}
 export function tripDateAt(date,timezone='Asia/Manila'){
