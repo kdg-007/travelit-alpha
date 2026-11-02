@@ -329,9 +329,18 @@ function packingMindmapEditor(){
   const saved=byTrip(state.packing).filter(x=>(x.group||'')===spec.group||(!x.group&&x.category===spec.category));
   if(saved.length){
    const sample=document.createElement('div');
-   sample.className='pack-tree-existing';sample.textContent=saved.length+' already packed on your list';
+   sample.className='pack-tree-existing';sample.textContent=saved.length+' on your list';
    branch.append(sample);
   }
+ }
+ const known=new Set(STARTER_BRANCHES.map(x=>x.group));
+ const customGroups=[...new Set(byTrip(state.packing).map(x=>x.group).filter(Boolean))].filter(x=>!known.has(x));
+ for(const name of customGroups){
+  const existing=byTrip(state.packing).filter(x=>x.group===name);
+  const branch=addPackingBranch(branches,name,existing[0]?.category||'Other');
+  const marker=document.createElement('div');
+  marker.className='pack-tree-existing';marker.textContent=existing.length+' on your list';
+  branch.append(marker);
  }
  wirePackingTree(tree);
  tree.addEventListener('click',e=>{
