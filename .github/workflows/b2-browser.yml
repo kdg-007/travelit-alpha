@@ -1,0 +1,25 @@
+name: TravelIt B2 browser acceptance
+on:
+  pull_request:
+    paths:
+      - 'js/**'
+      - 'css/**'
+      - 'index.html'
+      - 'tests/editorial-b2.browser.mjs'
+      - '.github/workflows/b2-browser.yml'
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Run browser acceptance test
+        run: node tests/editorial-b2.browser.mjs
