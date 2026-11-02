@@ -21,6 +21,7 @@ try{
  await page.locator('#f-startDate').fill('2026-12-05');
  await page.locator('#f-endDate').fill('2026-12-07');
  await page.locator('#modal-form button[type=submit]').click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  await page.locator('.itinerary-table').waitFor();
  assert.equal(await page.locator('.itinerary-table tbody tr').count(),2);
  for(const [i,title,time] of [[0,'Breakfast','08:00'],[1,'Walk on beach','10:00']]){
