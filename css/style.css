@@ -352,3 +352,15 @@
  .travel-timeline{padding:11px}
  .travel-timeline-sheet{min-width:610px}
 }
+
+/* D1: linked itinerary preview; inline warning only when something needs attention. */
+.schedule-conflicts{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:8px 0;padding:10px 13px;background:#f9f4ec;border:1px solid #e6d5b5;border-radius:10px;color:#5f4b2b;font-size:13px}
+.schedule-preview-intro{margin:2px 0 14px}
+.schedule-preview-intro strong{font-size:16px}
+.schedule-preview-intro p{margin:5px 0;font-size:13px;color:var(--muted)}
+.reflow-preview-list{display:grid;gap:0;max-height:48vh;overflow-y:auto}
+.reflow-preview-row{display:grid;gap:5px;padding:12px 0;border-bottom:1px solid var(--line)}
+.reflow-preview-row:last-child{border:0}
+.reflow-preview-row strong{font-size:14px}
+.reflow-preview-row span{font-size:13px;color:var(--muted)}
+@media(min-width:650px){.reflow-preview-row{grid-template-columns:minmax(0,1fr) minmax(230px,1.3fr);align-items:center}}
