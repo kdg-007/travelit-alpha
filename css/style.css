@@ -70,3 +70,26 @@
 .road-stop-content{flex:1;min-width:0}.road-stop-title{font-size:15px;font-weight:800;overflow-wrap:anywhere}.road-stop-actions{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0}
 .road-stop-actions .button{min-height:44px;display:inline-flex;align-items:center}
 @media(max-width:720px){.road-quick{padding:13px}.road-stop-actions .button{flex:1;justify-content:center}.road-stop-content .subtext{overflow-wrap:anywhere}}
+
+/* Consumer UX B1 – simpler navigation, tabular packing and quiet advanced settings */
+.packing-sheet h3{margin:0 0 6px}.packing-add-title{margin:22px 0 11px!important}
+.sheet-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.packing-table{border-collapse:collapse;width:100%;min-width:530px;font-size:13px;margin-top:8px}
+.packing-table th{text-align:left;font-size:11px;letter-spacing:.025em;color:var(--muted);border-bottom:1px solid var(--line);padding:10px 8px}
+.packing-table td{border-bottom:1px solid var(--line);padding:9px 8px;vertical-align:middle}
+.packing-table td:first-child,.packing-table th:first-child{padding-left:0}
+.packing-table td input[type=checkbox]{width:23px;height:23px;accent-color:#1c7771}
+.packing-table input:not([type=checkbox]),.packing-table select{max-width:100%;min-width:65px;width:100%;padding:9px 7px;min-height:40px;border:1px solid #c6d9db;border-radius:9px;background:white;font:inherit}
+.packing-entry td:first-child{min-width:165px}.packing-entry td:nth-child(2){width:65px}.packing-entry td:nth-child(3){min-width:125px}.packing-entry td:nth-child(4){min-width:115px}
+.table-actions{white-space:nowrap}.table-actions .button{padding:7px;min-width:34px}
+.advanced-diagnostics{margin:18px 0;border:1px solid var(--line);border-radius:13px;padding:13px 17px;background:#fff}
+.advanced-diagnostics>summary{cursor:pointer;font-size:14px;font-weight:650;color:var(--muted);padding:8px 0}
+.advanced-diagnostics>.grid2{margin-top:12px}.quiet-info{margin-top:14px;font-size:12px;color:var(--muted)}.quiet-info summary{cursor:pointer}
+.photo-editorial{border-radius:23px;padding:32px 29px;background:linear-gradient(125deg,#193b51,#287c75);color:#fff;margin:10px 0 20px}
+.photo-editorial .eyebrow{color:#ade6d8}.photo-editorial h2{font-size:clamp(26px,5vw,38px);margin:14px 0 9px}.photo-editorial p{color:#d2e7e7;max-width:540px}
+.photo-empty{margin-bottom:20px}
+#today-shortcut[hidden]{display:none!important}
+@media(max-width:720px){.packing-sheet{padding:14px}.photo-editorial{padding:25px 21px}.app-footer{display:none}.hero{padding:19px}.hero h2{font-size:23px}}
+
+/* iPhone PWA: top safe-area paint prevents scrolling text under the system clock. */
+@media(max-width:720px){body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--paper);pointer-events:none;z-index:20}}
