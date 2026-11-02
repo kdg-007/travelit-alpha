@@ -1,4 +1,4 @@
-name: TravelIt B2 browser acceptance
+name: TravelIt mobile browser acceptance
 on:
   pull_request:
     paths:
@@ -6,6 +6,7 @@ on:
       - 'css/**'
       - 'index.html'
       - 'tests/editorial-b2.browser.mjs'
+      - 'tests/consumer-b3.browser.mjs'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -22,4 +23,6 @@ jobs:
           npm install --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
       - name: Run browser acceptance test
-        run: node tests/editorial-b2.browser.mjs
+        run: |
+          node tests/editorial-b2.browser.mjs
+          node tests/consumer-b3.browser.mjs
