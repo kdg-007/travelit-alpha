@@ -53,6 +53,6 @@ test('pack groups survive v6 verified backup shape, old records still valid',()=
   {key:'trip:'+trip.id,id:trip.id,type:'trip',data:{...trip,createdAt:now,updatedAt:now}},
   ...[a,b].map(data=>({key:'packing:'+data.id,id:data.id,type:'packing',data}))
  ];
- assert.equal(SCHEMA_VERSION,6);
- assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:6,records,outbox:[]}),true);
+ assert.equal(SCHEMA_VERSION,7);
+ assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:7,records,outbox:[]}),true);
 });
