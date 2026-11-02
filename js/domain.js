@@ -1,11 +1,12 @@
 import {normalizeKeepItAssociation,logicalAssociationKey} from './keepit-associations.js';
 import {normalizeVehicle,normalizeExpense,normalizeLeg} from './trip-costs.js';
 import {DISCOVERY_STAGES} from './travel-planning.js';
-export const SCHEMA_VERSION = 5;
+import {normalizeLocalNote} from './local-notes.js';
+export const SCHEMA_VERSION = 6;
 export const PLACE_CATEGORIES = ['Destination','Restaurant','Hotel','Beach','Attraction','Other'];
 export const STOP_KINDS = ['Activity','Travel','Meal','Hotel','Other'];
 export const PACK_CATEGORIES = ['Essentials','Clothing','Personal care','Electronics','Family','Other'];
-export const VALID_TYPES = ['place','trip','stop','packing','annotation','vehicle','expense','keepitAssociation'];
+export const VALID_TYPES = ['place','trip','stop','packing','annotation','vehicle','expense','keepitAssociation','note'];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 export const cleanText = (v, max=280) => String(v ?? '').trim().slice(0,max);
 export function validCoords(lat,lng){const valid=v=>(typeof v==='number'&&Number.isFinite(v))||(typeof v==='string'&&/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(v.trim()));return valid(lat)&&valid(lng)&&Number(lat)>=-90&&Number(lat)<=90&&Number(lng)>=-180&&Number(lng)<=180;}
@@ -60,7 +61,7 @@ export function conflicts(stops){
   return result;
 }
 export function validateBackup(data){
-  if(!data || data.format!=='travelit-local-backup' || ![1,2,3,4,SCHEMA_VERSION].includes(data.schemaVersion) || !Array.isArray(data.records) || !Array.isArray(data.outbox)) throw Error('Not a supported TravelIt backup.');
+  if(!data || data.format!=='travelit-local-backup' || ![1,2,3,4,5,SCHEMA_VERSION].includes(data.schemaVersion) || !Array.isArray(data.records) || !Array.isArray(data.outbox)) throw Error('Not a supported TravelIt backup.');
   if(data.records.length>150000||data.outbox.length>300000) throw Error('Backup exceeds safety limits.');
   const ids=new Set(),associationKeys=new Set();
   const tripMap=new Map(data.records.filter(r=>r?.type==='trip'&&r.data).map(r=>[r.id,r.data]));
@@ -69,9 +70,11 @@ export function validateBackup(data){
     if(!r||!VALID_TYPES.includes(r.type)||typeof r.id!=='string'||!r.id||r.key!==`${r.type}:${r.id}`||!r.data||r.data.id!==r.id||typeof r.data.updatedAt!=='string')throw Error('Backup contains an invalid record.');
     if(data.schemaVersion<3&&['vehicle','expense'].includes(r.type))throw Error('Legacy backup cannot contain new financial records.');
     if(data.schemaVersion<5&&r.type==='keepitAssociation')throw Error('Older backup cannot contain KeepIt associations.');
+    if(data.schemaVersion<6&&r.type==='note')throw Error('Older backup cannot contain native local notes.');
     if(data.schemaVersion<4&&r.type==='place'&&r.data.stage!==undefined)throw Error('Older backup cannot contain discovery stage.');
     const key=r.type+':'+r.id;if(ids.has(key))throw Error('Duplicate record found.');ids.add(key);
     try{
+      if(r.type==='note')normalizeLocalNote(r.data);
       if(r.type==='keepitAssociation'){const assoc=normalizeKeepItAssociation(r.data);const logical=logicalAssociationKey(assoc);if(associationKeys.has(logical))throw Error('Duplicate logical note association');associationKeys.add(logical);}
       if(r.type==='place')normalizePlace(r.data);
       if(r.type==='trip'){normalizeTrip(r.data);if(r.data.vehicleId&&!vehicleMap.has(r.data.vehicleId))throw Error('Vehicle reference missing');}
