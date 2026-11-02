@@ -70,3 +70,18 @@
 .road-stop-content{flex:1;min-width:0}.road-stop-title{font-size:15px;font-weight:800;overflow-wrap:anywhere}.road-stop-actions{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0}
 .road-stop-actions .button{min-height:44px;display:inline-flex;align-items:center}
 @media(max-width:720px){.road-quick{padding:13px}.road-stop-actions .button{flex:1;justify-content:center}.road-stop-content .subtext{overflow-wrap:anywhere}}
+
+
+/* iPhone standalone PWA: keep scrolled content out of the system status bar.
+   The bottom navigation retains its separate safe-area handling. */
+@media (max-width:720px){
+  body::before{
+    content:"";
+    position:fixed;
+    top:0;left:0;right:0;
+    height:env(safe-area-inset-top, 0px);
+    background:var(--paper);
+    pointer-events:none;
+    z-index:20;
+  }
+}
