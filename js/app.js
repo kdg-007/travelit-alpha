@@ -670,7 +670,7 @@ function renderPhotos(){
  const cards=items.map((p,index)=>'<button type="button" class="photo-story editorial-photo '+(index%5===0?'large':'')+'" data-action="'+(p.kind==='cover'?'place:':'photo-open:')+esc(p.id)+'" aria-label="View '+esc(p.title)+'"><img src="'+esc(p.image)+'" loading="lazy" alt=""><span class="photo-caption"><small>'+esc(p.kind==='cover'?'Saved place':p.photoDate||'Our moments')+'</small><strong>'+esc(p.title)+'</strong></span></button>').join('');
  return '<div class="editorial-gallery"><section class="editorial-gallery-head"><span class="eyebrow">OUR PHOTO STORIES</span><h2>The moments we keep.</h2><p>'+all.length+' '+(all.length===1?'memory':'memories')+' and saved views</p><div class="action-line">'+action('+ Add photos','photo-add','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>'
   +filters+(items.length?'<div class="photo-story-grid editorial-photo-grid">'+cards+'</div>':
-   '<div class="editorial-empty"><span class="eyebrow">THE COLLECTION</span><h3>Every story starts somewhere.</h3><p>Bring in a photo or save a place worth revisiting.</p>'
+   '<div class="editorial-empty"><span class="eyebrow">THE COLLECTION</span><h3>No photos yet</h3><p>Add a photo or save a cover for a favorite place.</p>'
    +action('+ Add photos','photo-add','button button-primary button-small')+'</div>')
   +'</div>';
 }
