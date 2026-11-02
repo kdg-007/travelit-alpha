@@ -9,6 +9,7 @@ on:
       - 'tests/consumer-b3.browser.mjs'
       - 'tests/planning-b4.browser.mjs'
       - 'tests/map-m1.browser.mjs'
+      - 'tests/notes-timeline.browser.mjs'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -30,3 +31,4 @@ jobs:
           node tests/consumer-b3.browser.mjs
           node tests/planning-b4.browser.mjs
           node tests/map-m1.browser.mjs
+          node tests/notes-timeline.browser.mjs
