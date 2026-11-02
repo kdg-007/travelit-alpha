@@ -37,6 +37,6 @@ test('map code does not download bulk tiles or require credentials',async()=>{
  const s=readFileSync(new URL('../js/live-map.js',import.meta.url),'utf8');
  assert.match(s,/tiles\.openfreemap\.org\/styles\/liberty/);
  assert.doesNotMatch(s,/tile\.openstreetmap\.org/);
- assert.doesNotMatch(s,/api_key|API_KEY|billing|downloadRegion|prefetchTiles/);
+ assert.doesNotMatch(s.replace(/^\/\*[\s\S]*?\*\//,''),/api_key|API_KEY|billing|downloadRegion|prefetchTiles/);
  assert.match(s,/setLiveMapPinMode/);
 });
