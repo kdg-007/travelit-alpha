@@ -282,3 +282,25 @@
 .map-advanced{margin:18px 0}
 .map-advanced>summary{cursor:pointer;color:var(--muted);font-size:13px}
 @media(max-width:600px){.packing-map-nodes{grid-template-columns:1fr}.packing-map-center{width:100%}.map-online-frame{height:48vh;min-height:280px}}
+
+/* M1: actual multipin map; editor/advanced map tooling stays collapsed. */
+.travelit-map-layout{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(270px,1fr);align-items:start;gap:16px}
+.travelit-map-primary,.travelit-map-places{min-width:0}
+.travelit-map-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+.travelit-map-canvas{width:100%;height:min(69vh,680px);min-height:410px;overflow:hidden;isolation:isolate;background:#e9f0ee;border-radius:12px;border:1px solid var(--line)}
+.travelit-map-canvas iframe{border:0;display:block;width:100%;height:100%}
+.travelit-map-canvas .maplibregl-control-container{font-size:12px}
+.travelit-map-canvas .maplibregl-ctrl-attrib{max-width:100%;font-size:10px}
+.travelit-map-pin{display:flex;justify-content:center;align-items:center;width:34px;height:34px;border:3px solid #fff;box-shadow:0 2px 9px rgba(17,45,64,.35);background:var(--teal);color:#fff;font-weight:800;font-size:15px;border-radius:50%;transform:none}
+.travelit-map-pin::first-letter{transform:rotate(45deg)}
+.travelit-map-place-list{display:grid;gap:0;max-height:70vh;overflow:auto}
+.travelit-map-place{padding:12px 0;border-top:1px solid var(--line)}
+.travelit-map-place:first-child{border-top:0}
+.travelit-map-place-title{display:flex;align-items:center;gap:8px}
+.travelit-map-order{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;background:var(--mint);color:var(--teal);border-radius:50%;font-size:12px;font-weight:800}
+.travelit-map-place .action-line{gap:6px;margin-top:8px;flex-wrap:wrap}
+.travelit-map-place a{font-size:12px;font-weight:600}
+.travelit-map-place .button{font-size:12px;padding:7px 11px}
+#live-map-status{min-height:0;margin-top:8px}
+@media(max-width:920px){.travelit-map-layout{grid-template-columns:1fr}.travelit-map-place-list{max-height:none}}
+@media(max-width:720px){.travelit-map-canvas{height:52vh;min-height:310px}.travelit-map-layout{gap:12px}.travelit-map-primary{padding:14px}.travelit-map-places{padding:14px}.travelit-map-head h2{font-size:19px}.travelit-map-head .action-line{margin:0}}
