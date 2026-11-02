@@ -304,3 +304,51 @@
 #live-map-status{min-height:0;margin-top:8px}
 @media(max-width:920px){.travelit-map-layout{grid-template-columns:1fr}.travelit-map-place-list{max-height:none}}
 @media(max-width:720px){.travelit-map-canvas{height:52vh;min-height:310px}.travelit-map-layout{gap:12px}.travelit-map-primary{padding:14px}.travelit-map-places{padding:14px}.travelit-map-head h2{font-size:19px}.travelit-map-head .action-line{margin:0}}
+
+/* N1: quiet travel notes with backup-complete local content */
+.notes-library{display:grid;gap:8px;margin:9px 0}
+.note-list-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.note-list-item>div:first-child{display:grid;gap:4px;min-width:0;flex:1}
+.note-list-item strong{font-size:15px;color:var(--navy)}
+.note-snippet{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.travel-note-editor{display:grid;gap:10px}
+.travel-note-editor .field{margin-bottom:0}
+.note-edit-tools{display:flex;gap:6px;flex-wrap:wrap}
+.travel-note-editor>textarea{width:100%;min-height:270px;padding:15px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--navy);font:inherit;font-size:15px;line-height:1.6;resize:vertical;box-sizing:border-box}
+.note-save-status{font-size:12px;color:var(--muted)}
+.note-preview{padding:12px 16px;background:var(--paper);border:1px solid var(--line);border-radius:12px;font-size:14px;line-height:1.6}
+.note-preview h1,.note-preview h2,.note-preview h3{margin:12px 0 5px}
+.note-preview p{margin:5px 0}
+.note-preview ul{padding-left:24px}
+.note-preview code{font:0.9em ui-monospace,SFMono-Regular,monospace;background:#ecf1f1;border-radius:4px;padding:1px 4px}
+/* Timeline and table remain two views of the same local stop records. */
+.timeline-view-switch{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 10px}
+.timeline-view-switch .active{background:var(--mint);border-color:var(--teal);color:var(--teal)}
+.travel-timeline{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:15px;min-width:0}
+.travel-timeline-intro{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.travel-timeline-scroll{overflow-x:auto;overscroll-behavior-x:contain}
+.travel-timeline-sheet{min-width:660px}
+.timeline-header,.travel-timeline-row{display:grid;grid-template-columns:175px minmax(0,1fr) 110px;align-items:center;gap:8px}
+.timeline-header{min-height:34px;color:var(--muted);font-weight:700;font-size:12px}
+.timeline-axis{height:28px;position:relative;border-bottom:1px solid var(--line)}
+.timeline-tick{position:absolute;bottom:3px;transform:translateX(-50%);font-size:10px;white-space:nowrap}
+.travel-timeline-row{padding:7px 0;border-bottom:1px solid var(--line);min-height:46px}
+.timeline-label{display:grid;gap:3px}
+.timeline-label strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timeline-label span{font-size:11px;color:var(--muted)}
+.timeline-track{height:32px;border-radius:6px;position:relative;background:repeating-linear-gradient(to right,rgba(27,72,95,.08) 0,rgba(27,72,95,.08) 1px,transparent 1px,transparent 10%);background-color:#f3f7f7}
+.timeline-bar{position:absolute;top:3px;height:26px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;border-radius:5px;background:var(--teal);color:white;padding:4px 7px;font-size:11px;font-weight:700;cursor:grab;touch-action:pan-y}
+.timeline-bar.fixed{background:var(--navy);cursor:default}
+.timeline-bar.kind-travel{background:#4b85a1}
+.timeline-bar.kind-meal{background:#b98351}
+.timeline-bar.kind-hotel{background:#7b78ad}
+.timeline-steps{display:flex;gap:3px;justify-content:flex-end}
+.timeline-steps .button{padding:5px 7px;font-size:11px}
+.timeline-unscheduled{padding-top:12px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.timeline-empty{padding:35px 12px;color:var(--muted);text-align:center}
+@media(max-width:720px){
+ .travel-note-editor>textarea{min-height:310px}
+ .note-list-item{align-items:start;flex-direction:column}
+ .travel-timeline{padding:11px}
+ .travel-timeline-sheet{min-width:610px}
+}

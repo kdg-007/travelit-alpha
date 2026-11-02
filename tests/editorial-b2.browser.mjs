@@ -21,6 +21,7 @@ try{
  await page.locator('#f-startDate').fill('2026-12-05');
  await page.locator('#f-endDate').fill('2026-12-07');
  await page.locator('#modal-form button[type=submit]').click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  await page.locator('.itinerary-table').waitFor();
  assert.equal(await page.locator('.itinerary-table tbody tr').count(),2);
  for(const [i,title,time] of [[0,'Breakfast','08:00'],[1,'Walk on beach','10:00']]){
@@ -44,6 +45,7 @@ try{
  assert.equal(await page.locator('.photo-story img').count(),1);
  await page.reload({waitUntil:'networkidle'});
  await page.locator('[data-view="trips"]').last().click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  assert.equal(await page.locator('.itinerary-table tr[data-stop-id]:not([data-stop-id=""])').count(),2,'persistent stops');
  await page.locator('[data-view="more"]').last().click();
  const downloadPromise=page.waitForEvent('download');
@@ -51,7 +53,7 @@ try{
  const download=await downloadPromise;
  const bytes=readFileSync(await download.path());
  const backup=JSON.parse(bytes.toString('utf8'));
- assert.equal(backup.schemaVersion,5);
+ assert.equal(backup.schemaVersion,6);
  assert.equal(backup.records.filter(x=>x.type==='stop').length,2);
  assert.equal(backup.records.filter(x=>x.type==='place').length,1);
  assert.ok(backup.records.find(x=>x.type==='place').data.coverImage.startsWith('data:image/jpeg;base64,'));
