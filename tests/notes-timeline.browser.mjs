@@ -46,7 +46,7 @@ try{
  const downloaded=await downloadEvent;
  const path=await downloaded.path();
  const backup=JSON.parse(readFileSync(path,'utf8'));
- assert.equal(backup.schemaVersion,6);
+ assert.equal(backup.schemaVersion,7);
  const note=backup.records.find(r=>r.type==='note'&&r.data.title==='Trip ideas');
  assert.ok(note);
  assert.equal(note.data.content,'# Sagada\n- Visit the museum\n- Early breakfast\n**Keep this**');
