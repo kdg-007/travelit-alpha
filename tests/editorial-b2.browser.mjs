@@ -53,7 +53,7 @@ try{
  const download=await downloadPromise;
  const bytes=readFileSync(await download.path());
  const backup=JSON.parse(bytes.toString('utf8'));
- assert.equal(backup.schemaVersion,6);
+ assert.equal(backup.schemaVersion,7);
  assert.equal(backup.records.filter(x=>x.type==='stop').length,2);
  assert.equal(backup.records.filter(x=>x.type==='place').length,1);
  assert.ok(backup.records.find(x=>x.type==='place').data.coverImage.startsWith('data:image/jpeg;base64,'));
