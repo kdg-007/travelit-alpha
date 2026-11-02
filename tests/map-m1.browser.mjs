@@ -26,6 +26,8 @@ try{
  assert.equal(await page.locator('.travelit-map-place').count(),2);
  assert.equal(await page.locator('[data-action^="live-map-focus:"]').count(),2);
  assert.equal(await page.locator('[data-action="live-map-pick"]').isVisible(),true);
+ // A working interactive map must paint a MapLibre canvas, not merely an empty container.
+ await page.locator('#travelit-live-map .maplibregl-canvas').waitFor({timeout:25000});
  assert.equal(await page.locator('.map-advanced').getAttribute('open'),null,'technical map tools must start closed');
  assert.equal(errors.length,0,'Unhandled page errors: '+errors.join('; '));
  console.log('M1_BROWSER_PASS: saved multi-pin list, map container, pin controls, advanced tools concealed');
