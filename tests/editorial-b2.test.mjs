@@ -7,12 +7,12 @@ const app=readFileSync(new URL('../js/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../css/style.css',import.meta.url),'utf8');
 test('Explore uses editorial stories rather than raw URL panels',()=>{
  const a=app.slice(app.indexOf('function renderExplore(){'),app.indexOf('function activePack('));
- assert.match(a,/journal-intro/);assert.match(a,/story-grid/);assert.match(a,/placeCover\(p\)/);
+ assert.match(a,/library-toolbar/);assert.match(a,/story-grid/);assert.match(a,/placeCover\(p\)/);
  assert.doesNotMatch(a,/class="url-short"|Location verification:|assign its location only when known/);
 });
 test('Today does not expose engineering readiness warnings',()=>{
  const a=app.slice(app.indexOf('function renderToday(){'),app.indexOf('async function savePackingBatch'));
- assert.match(a,/journal-intro/);assert.match(a,/editorial-stop/);
+ assert.match(a,/empty-essentials/);assert.match(a,/editorial-stop/);
  assert.doesNotMatch(a,/Offline limitation:|renderPreparation\(/);
 });
 test('Itinerary supports multiple visible row edits and one guarded save',()=>{
@@ -47,7 +47,7 @@ test('existing travel legs and fixed bookings remain when editing day-grid field
 test('photo tab previews only explicitly saved local cover images',()=>{
  const section=app.slice(app.indexOf('function renderPhotos(){'),app.indexOf('function renderMoreTechnical'));
  assert.match(section,/state\.places\.filter\(p=>p\.coverImage\)/);
- assert.match(section,/Photo stories/);assert.doesNotMatch(section,/automatically imported|automatically geolocated/);
+ assert.match(section,/No photos yet/);assert.doesNotMatch(section,/automatically imported|automatically geolocated/);
 });
 test('status bar remains protected without hiding primary app navigation',()=>{
  assert.match(css,/display-mode:standalone/);assert.match(css,/safe-area-inset-top/);
