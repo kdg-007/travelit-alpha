@@ -37,5 +37,6 @@ test('legacy v5 trip and packing backup remains valid',()=>{
 });
 test('Photos tab is honest about missing photo storage',()=>{
  assert.match(app,/function renderPhotos/);
- assert.match(app,/full-resolution photo library and KeepIt integration are not connected/);\n assert.match(app,/function placeCover/);
+ assert.match(app,/full-resolution photo library and KeepIt integration are not connected/);
+ assert.match(app,/function placeCover/);
 });
