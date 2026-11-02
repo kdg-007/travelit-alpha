@@ -9,6 +9,7 @@ import {persistPackingToggle} from './packing-interaction.js';
 import {normalizeAnnotation,exactCoordinatesFromLink,assessOfflineTrip,mapBounds} from './map-tools.js';
 import {mapMarkup,mapClickToGeo} from './map-view.js';
 import {normalizeLocalNote,previewNote,linkedNotes} from './local-notes.js';
+import {timelineForDay,timelinePosition,shiftTimelineStop,formatClock} from './travel-timeline.js';
 import {mountLiveMap,destroyLiveMap,setLiveMapPinMode,focusLiveMap,fitLiveMap,placedMarkers} from './live-map.js';
 import {MAP_LIMITS,inspectFeatureCollection,sha256MapPack,verifyMapPack,portableMapExport,portableMapImport} from './offline-map-pack.js';
 import {FREE_MAP_CATALOG,fetchCatalogRegion,catalogFailureHelp} from './map-catalog.js';
@@ -28,7 +29,7 @@ const $=s=>document.querySelector(s);
 let modalDirty=false,modalReturnFocus=null,modalBaseRevisions={},modalBasePresence={},modalBaseEpoch=null,modalBaseMapRevision=0,workspaceChannel=null,externalRefreshTimer=null,localOperationDepth=0,versionObsolete=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const navigation=[['explore','Explore','⌖'],['trips','Trips','▤'],['today','Today','◷'],['photos','Photos','▧'],['more','More','⋯']];
-const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],notes:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',search:'',category:'All',stageFilter:'All',calendarMonth:'',chosenDay:'',toastTimer:null};
+const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],notes:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',itineraryDisplay:'timeline',search:'',category:'All',stageFilter:'All',calendarMonth:'',chosenDay:'',toastTimer:null};
 state.recordRevisions={};state.recordPresence={};state.workspaceEpoch=null;state.workspaceRevision=0;state.mapRevision=0;
 const isOnline=()=>navigator.onLine;
 const byTrip=type=>type.filter(v=>v.tripId===state.selectedTrip);
@@ -433,6 +434,57 @@ async function saveItineraryGrid(){
  const revisions={},presence={};for(const item of list){const row=rows.find(r=>r.dataset.stopId===item.id);const key='stop:'+item.id;revisions[key]=row?Number(row.dataset.baseRevision):0;presence[key]=Boolean(row);}
  await writeLocally(()=>guardedSaveRecords(state.db,'stop',list,{expectedEpoch:state.workspaceEpoch,expectedRevisionByKey:revisions,expectedPresenceByKey:presence}));
 }
+function renderTripTimeline(entries,day){
+ const layout=timelineForDay(entries,day),ticks=[];
+ for(let m=Math.ceil(layout.begin/60)*60;m<=layout.finish;m+=60){
+  ticks.push('<span class="timeline-tick" style="left:'+((m-layout.begin)/layout.span*100).toFixed(3)+'%">'+esc(formatClock(Math.min(m,1439)))+'</span>');
+ }
+ const rows=layout.events.map(event=>{
+  const pos=timelinePosition(event,layout);
+  return '<div class="travel-timeline-row"><div class="timeline-label"><strong>'+esc(event.title)+'</strong><span>'+esc(event.time)+(event.fixed?' · Booking':'')+'</span></div>'
+  +'<div class="timeline-track"><button type="button" class="timeline-bar kind-'+esc(event.kind.toLowerCase())+(event.fixed?' fixed':'')+'"'
+  +' data-stop-id="'+esc(event.id)+'" data-action="timeline-open:'+esc(event.id)+'"'
+  +' style="left:'+pos.left.toFixed(3)+'%;width:'+pos.width.toFixed(3)+'%"'
+  +' title="'+esc(event.title+' · '+event.time)+'" aria-label="Edit '+esc(event.title)+'">'+(event.fixed?'🔒 ':'')+esc(event.title)+'</button></div>'
+  +'<div class="timeline-steps">'+(event.fixed?'':action('−15','timeline-shift:-15:'+event.id,'button button-small')+action('+15','timeline-shift:15:'+event.id,'button button-small'))+'</div></div>';
+ }).join('');
+ return '<section class="travel-timeline" id="travel-gantt"><div class="travel-timeline-intro"><strong>Day schedule</strong><span class="tiny muted">Drag flexible activities or adjust by 15 minutes</span></div>'
+  +'<div class="travel-timeline-scroll"><div class="travel-timeline-sheet"><div class="timeline-header"><span>Activities</span><div class="timeline-axis">'+ticks.join('')+'</div><span></span></div>'
+  +(rows||'<div class="timeline-empty">Set an activity time to show it on the timeline.</div>')
+  +(layout.untimed.length?'<div class="timeline-unscheduled"><strong>Flexible</strong>'+layout.untimed.map(e=>action(e.title,'timeline-open:'+e.id,'button button-small')).join('')+'</div>':'')
+  +'</div></div></section>';
+}
+function bindTripTimeline(){
+ const el=$('#travel-gantt');if(!el)return;
+ let gesture=null,suppress=false;
+ el.addEventListener('pointerdown',e=>{
+  const bar=e.target.closest('.timeline-bar:not(.fixed)');if(!bar)return;
+  const track=bar.closest('.timeline-track'),stop=state.stops.find(s=>s.id===bar.dataset.stopId);
+  if(!track||!stop)return;
+  gesture={id:stop.id,x:e.clientX,width:track.getBoundingClientRect().width,start:Date.now()};
+ });
+ el.addEventListener('pointercancel',()=>{gesture=null;});
+ el.addEventListener('pointerup',e=>{
+  if(!gesture)return;
+  const captured=gesture;gesture=null;
+  const deltaPx=e.clientX-captured.x;
+  if(Math.abs(deltaPx)<9||!captured.width)return;
+  suppress=true;
+  setTimeout(()=>{suppress=false;},350);
+  const trip=selected(),stop=state.stops.find(s=>s.id===captured.id);
+  if(!trip||!stop)return;
+  const layout=timelineForDay(byTrip(state.stops).filter(s=>s.date===state.chosenDay),state.chosenDay);
+  const delta=Math.round((deltaPx/captured.width*layout.span)/15)*15;
+  if(!delta)return;
+  try{
+   const shifted=shiftTimelineStop(stop,delta,trip);
+   void commit('stop',normalizeStop(shifted,trip)).catch(err=>toast(err.message||String(err),true));
+  }catch(err){toast(err.message||String(err),true);}
+ });
+ el.addEventListener('click',e=>{
+  if(suppress&&e.target.closest('.timeline-bar')){e.preventDefault();e.stopPropagation();}
+ },true);
+}
 function renderItinerary(t){
  if(!state.chosenDay||state.chosenDay<t.startDate||state.chosenDay>t.endDate)state.chosenDay=t.startDate;
  const {index:chosenIndex,count:dayCount}=tripDayPosition(t,state.chosenDay);
@@ -441,9 +493,11 @@ function renderItinerary(t){
  const issues=conflicts(entries),travelIssues=travelFeasibility(entries);
  return `<div class="day-tools"><button class="button button-small" data-action="day-prev" ${chosenIndex===0?'disabled':''}>←</button><label for="trip-day"><strong>Day ${chosenIndex+1} of ${dayCount}</strong></label><input class="button" id="trip-day" type="date" min="${t.startDate}" max="${t.endDate}" value="${state.chosenDay}"><button class="button button-small" data-action="day-next" ${chosenIndex===dayCount-1?'disabled':''}>→</button></div>
  <div class="day-strip" role="group" aria-label="Select itinerary day">${strip.map(date=>`<button class="day-tile ${date===state.chosenDay?'active':''}" aria-pressed="${date===state.chosenDay}" data-action="select-day:${date}"><span>${new Intl.DateTimeFormat('en-US',{timeZone:'UTC',weekday:'short'}).format(new Date(date+'T12:00:00Z'))}</span><strong>${date.slice(8)}</strong></button>`).join('')}</div>
- <section class="itinerary-editor"><div class="row-between wrap"><div><h3>Day ${chosenIndex+1} · ${dateShort(state.chosenDay)}</h3></div><div class="action-line">${action('View map','show-map')}${action('Copy day','brief-copy-day')}</div></div>
+ <div class="timeline-view-switch" role="group" aria-label="Itinerary view">${action('Timeline','itinerary-mode:timeline','button button-small'+(state.itineraryDisplay==='timeline'?' active':''))}${action('Table','itinerary-mode:table','button button-small'+(state.itineraryDisplay==='table'?' active':''))}${action('+ Activity','add-stop','button button-small')}</div>
+ ${state.itineraryDisplay==='timeline'?renderTripTimeline(entries,state.chosenDay):''}
+ ${state.itineraryDisplay==='table'?`<section class="itinerary-editor"><div class="row-between wrap"><div><h3>Day ${chosenIndex+1} · ${dateShort(state.chosenDay)}</h3></div><div class="action-line">${action('View map','show-map')}${action('Copy day','brief-copy-day')}</div></div>
  <div class="sheet-scroll"><table class="itinerary-table"><thead><tr><th>Time</th><th>Activity / stop</th><th>Min</th><th>Type</th><th>Place</th><th>Fixed</th><th></th></tr></thead><tbody id="itinerary-grid-body">${entries.map(s=>itineraryInputRow(s,t)).join('')}${Array.from({length:2},()=>itineraryInputRow(null,t)).join('')}</tbody></table></div>
- <div class="editorial-actions">${action('+ Row','add-itinerary-row','button button-small')}${action('Save day','save-itinerary-grid','button button-primary button-small')}</div></section>
+ <div class="editorial-actions">${action('+ Row','add-itinerary-row','button button-small')}${action('Save day','save-itinerary-grid','button button-primary button-small')}</div></section>`:''}
  ${(issues.length||travelIssues.some(i=>i.kind==='insufficient-transfer-time'))?`<div class="alert red" style="margin-top:10px">Check your schedule: some activities overlap or leave insufficient travel time.</div>`:''}`;
 }
 function renderTripCalendar(t){
@@ -509,7 +563,7 @@ function renderMoreTechnical(){return `${section('Library & settings','Your data
 function renderMore(){
  return `<section class="essential-library"><div class="essential-row"><div><h3>Notes</h3><p class="tiny muted">${state.notes.length} saved</p></div>${action('+ Note','add-note','button button-primary button-small')}</div>${state.notes.length?noteCards(state.notes):''}<div class="essential-row"><div><h3>Backup</h3><p class="tiny muted">Not encrypted. Keep your backup private.</p></div><div class="action-line">${action('Export','export-backup','button button-primary button-small')}${action('Restore','import-backup','button button-small')}</div></div><div class="essential-row"><div><h3>Vehicles</h3><p class="tiny muted">${state.vehicles.length} saved</p></div><div class="action-line">${action('+ Add','add-vehicle','button button-small')}</div></div>${state.vehicles.length?`<div class="vehicle-inline-list">${state.vehicles.map(v=>`<div class="row-between"><span>${esc(v.name)}</span>${action('Edit','edit-vehicle:'+v.id,'button button-small')}</div>`).join('')}</div>`:''}</section><details class="advanced-diagnostics"><summary>Advanced</summary>${renderMoreTechnical()}${renderOfflineReadiness()}</details>`;
 }
-function render(){destroyLiveMap();renderNav();$('#today-shortcut').hidden=true;$('#quick-save').hidden=state.view!=='explore';$('#page-heading').textContent=({explore:'Explore',map:'Map',trips:'My Trips',today:'Today',packing:'Packing',photos:'Photos',more:'My Library'})[state.view]||'Explore';colorStatus();$('#main').innerHTML=state.view==='explore'?renderExplore():state.view==='map'?renderMap():state.view==='trips'?renderTrips():state.view==='today'?renderToday():state.view==='packing'?renderPacking():state.view==='photos'?renderPhotos():renderMore();if(state.view==='map'){const canvas=$('#travelit-live-map');if(canvas)void mountLiveMap({container:canvas,places:state.places,stops:state.stops,selectedTripId:state.selectedTrip,onPlaceClick:id=>placeDetails(id),onPinPick:coords=>{placeEditor();const lat=$('#f-lat'),lng=$('#f-lng');if(lat&&lng){lat.value=coords.lat.toFixed(6);lng.value=coords.lng.toFixed(6);const details=lat.closest('details');if(details)details.open=true;modalDirty=true;}}});}}
+function render(){destroyLiveMap();renderNav();$('#today-shortcut').hidden=true;$('#quick-save').hidden=state.view!=='explore';$('#page-heading').textContent=({explore:'Explore',map:'Map',trips:'My Trips',today:'Today',packing:'Packing',photos:'Photos',more:'My Library'})[state.view]||'Explore';colorStatus();$('#main').innerHTML=state.view==='explore'?renderExplore():state.view==='map'?renderMap():state.view==='trips'?renderTrips():state.view==='today'?renderToday():state.view==='packing'?renderPacking():state.view==='photos'?renderPhotos():renderMore();if(state.view==='trips'&&state.tripTab==='itinerary'&&state.itineraryDisplay==='timeline')bindTripTimeline();if(state.view==='map'){const canvas=$('#travelit-live-map');if(canvas)void mountLiveMap({container:canvas,places:state.places,stops:state.stops,selectedTripId:state.selectedTrip,onPlaceClick:id=>placeDetails(id),onPinPick:coords=>{placeEditor();const lat=$('#f-lat'),lng=$('#f-lng');if(lat&&lng){lat.value=coords.lat.toFixed(6);lng.value=coords.lng.toFixed(6);const details=lat.closest('details');if(details)details.open=true;modalDirty=true;}}});}}
 function placeDetails(id){const p=placeById(id);if(!p)return toast('Place not found',true);const map=p.lat!==null?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lat+','+p.lng)}`:null;openModal(p.name,`<div class="stack"><div class="row wrap"><span class="tag">${esc(p.category)}</span><span class="chip">${p.lat!==null?`${p.lat}, ${p.lng}`:'Location not pinned'}</span></div>${p.notes?`<p>${esc(p.notes)}</p>`:'<p class="muted">No note added yet.</p>'}${p.sourceUrl?`<div><strong>Original discovery link</strong><p class="subtext" style="overflow-wrap:anywhere">${esc(p.sourceUrl)}</p>${link('Open original source',p.sourceUrl)}</div>`:''}<div class="action-line">${p.lat!==null?`${link('Navigate with Waze',wazeUrl(p))} ${link('View in Google Maps',map)}`:''}<button type="button" class="button" id="detail-note">+ Note</button><button type="button" class="button" id="detail-edit">Edit place</button><button type="button" class="button button-danger" id="detail-delete">Delete place</button></div></div>`);$('#detail-note').addEventListener('click',()=>noteEditor(null,'place',p.id));$('#detail-edit').addEventListener('click',()=>placeEditor(p));$('#detail-delete').addEventListener('click',async()=>{if(confirm(`Delete saved place “${p.name}”? Any trip stop referencing it retains its text but loses the pin.`)){closeModal();await erase('place',p.id);}});}
 async function exportBackup(){const data=await allData(state.db);const backup=await createBackup(data);const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`TravelIt_VerifiedBackup_${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('SHA-256 protected backup generated. Store a separate copy safely.');}
 /** No source data are written until the user has seen the verified backup impact. */
@@ -704,6 +758,9 @@ function currentMapBounds(){
  return (pack?.regionAtlas||pack?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(pack.bounds):mapBounds(all);
 }
 async function handler(target){const actionName=target.dataset.action;if(!actionName)return;try{
+  if(actionName.startsWith('itinerary-mode:')){state.itineraryDisplay=actionName.slice(15)==='table'?'table':'timeline';render();return;}
+  if(actionName.startsWith('timeline-open:')){const v=state.stops.find(x=>x.id===actionName.slice(14));if(!v)throw Error('Activity not found');stopEditor(v);return;}
+  if(actionName.startsWith('timeline-shift:')){const tokens=actionName.split(':');const delta=Number(tokens[1]),trip=selected(),stop=state.stops.find(x=>x.id===tokens[2]);if(!trip||!stop)throw Error('Activity not found');const shifted=shiftTimelineStop(stop,delta,trip);await commit('stop',normalizeStop(shifted,trip));return;}
   if(actionName==='add-note'){void noteEditor();return;}
   if(actionName.startsWith('add-note:')){const parts=actionName.split(':');if(!['trip','place','stop'].includes(parts[1])||!parts[2])throw Error('Unknown note target.');void noteEditor(null,parts[1],parts.slice(2).join(':'));return;}
   if(actionName.startsWith('edit-note:')){const note=state.notes.find(n=>n.id===actionName.slice(10));if(!note)throw Error('Note not found');void noteEditor(note);return;}
