@@ -589,13 +589,16 @@ function renderRoadQuickList(queue,nextId){
 }
 function renderToday(){
  const now=new Date(),trip=pickTodayTrip(state.trips,now,state.selectedTrip);
- if(!trip)return `<section class="empty-essentials"><strong>No trip scheduled</strong>${action('Plan a trip','new-trip','button button-primary button-small')}</section>`;
+ if(!trip)return '<section class="editorial-today-empty"><span class="eyebrow">TODAY, AND THE DAYS AHEAD</span><h2>Room for another journey.</h2><p>No trip scheduled</p><div class="action-line">'+action('Plan a trip','new-trip','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>';
  const date=trip.localDate,onTrip=trip.onTrip,filtered=itineraryOrder(state.stops.filter(s=>s.tripId===trip.id&&s.date===(onTrip?date:trip.startDate)));
  const clock=tripClock(now,trip.timezone),nextDecision=nextTodayStop(filtered,clock,{onTrip}),next=nextDecision.stop,p=next?.placeId?placeById(next.placeId):null;
  const firstImage=state.places.find(q=>q.coverImage&&filtered.some(x=>x.placeId===q.id));
+ const moments=state.photos.filter(x=>x.tripId===trip.id).slice(0,4);
  return `<section class="journal-intro today-intro ${firstImage?'has-cover':''}"><div><span class="eyebrow">${onTrip?'TODAY ON THE ROAD':'UPCOMING JOURNEY'}</span><h2>${esc(trip.title)}</h2><p>${esc(dateShort(onTrip?date:trip.startDate))} · ${filtered.length} planned ${filtered.length===1?'stop':'stops'}</p>${action('Open itinerary','today-open-trip','button button-primary button-small')}</div>${firstImage?`<div class="journal-intro-cover">${placeCover(firstImage)}</div>`:''}</section>
  ${next?`<div class="next-moment"><span class="eyebrow">NEXT STOP</span><h3>${esc(next.title)}</h3><p>${esc(next.time||'Whenever you are ready')}${p?' · '+esc(p.name):''}</p><div class="story-actions">${p&&wazeUrl(p)?link('Directions',wazeUrl(p)):''}${p?.sourceUrl?link('Saved link',p.sourceUrl):''}</div></div>`:''}
- <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>`;
+ <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>
+ <div class="today-foot-actions">${action('+ Trip note','add-note:trip:'+trip.id,'button button-small')}${action('Photo stories','open-photos','button button-small')}</div>
+ ${moments.length?'<section class="today-moments"><div class="journal-heading"><div><span class="eyebrow">FROM OUR COLLECTION</span><h2>Moments to keep</h2></div></div><div class="today-moments-grid">'+moments.map(x=>'<button class="today-moment" data-action="photo-open:'+esc(x.id)+'"><img src="'+esc(x.image)+'" alt="'+esc(x.title)+'"><span>'+esc(x.title)+'</span></button>').join('')+'</div></section>':''}`;
 }
 async function savePackingBatch(){
  const trip=selected(),body=$('#packing-draft-body');if(!trip||!body)throw Error('Choose a trip and enter packing items first.');
@@ -869,6 +872,7 @@ function currentMapBounds(){
  return (pack?.regionAtlas||pack?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(pack.bounds):mapBounds(all);
 }
 async function handler(target){const actionName=target.dataset.action;if(!actionName)return;try{
+  if(actionName==='open-photos'){setNav('photos');return;}
   if(actionName==='photo-add'){photoImportEditor();return;}
   if(actionName.startsWith('photo-filter:')){state.photoFilter=actionName.slice(13);render();return;}
   if(actionName.startsWith('photo-open:')){photoDetails(actionName.slice(11));return;}
