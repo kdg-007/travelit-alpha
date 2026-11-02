@@ -70,11 +70,11 @@ test('backup validator rejects circular and cross-trip links without changing sc
  const a=make('A','Start','2026-12-05','08:00');
  const b=make('B','End','2026-12-05','10:00',60,'A');
  const records=[...trips,...[a,b].map(data=>({key:'stop:'+data.id,id:data.id,type:'stop',data}))];
- assert.equal(SCHEMA_VERSION,6);
- assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:6,records,outbox:[]}),true);
+ assert.equal(SCHEMA_VERSION,7);
+ assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:7,records,outbox:[]}),true);
  const invalid=records.map(r=>({...r,data:{...r.data}}));
  invalid[1].data.predecessorId='B';
- assert.throws(()=>validateBackup({format:'travelit-local-backup',schemaVersion:6,records:invalid,outbox:[]}),/cycle/);
+ assert.throws(()=>validateBackup({format:'travelit-local-backup',schemaVersion:7,records:invalid,outbox:[]}),/cycle/);
 });
 test('other stop metadata is preserved by a forward-only proposal',()=>{
  const a=make('A','Departure','2026-12-05','08:00',120);
