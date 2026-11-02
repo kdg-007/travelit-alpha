@@ -10,6 +10,7 @@ on:
       - 'tests/planning-b4.browser.mjs'
       - 'tests/map-m1.browser.mjs'
       - 'tests/notes-timeline.browser.mjs'
+      - 'tests/dependencies-d1.browser.mjs'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -32,3 +33,4 @@ jobs:
           node tests/planning-b4.browser.mjs
           node tests/map-m1.browser.mjs
           node tests/notes-timeline.browser.mjs
+          node tests/dependencies-d1.browser.mjs

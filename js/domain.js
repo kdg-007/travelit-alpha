@@ -1,6 +1,7 @@
 import {normalizeKeepItAssociation,logicalAssociationKey} from './keepit-associations.js';
 import {normalizeVehicle,normalizeExpense,normalizeLeg} from './trip-costs.js';
 import {DISCOVERY_STAGES} from './travel-planning.js';
+import {dependencyOrder} from './trip-dependencies.js';
 import {normalizeLocalNote} from './local-notes.js';
 export const SCHEMA_VERSION = 6;
 export const PLACE_CATEGORIES = ['Destination','Restaurant','Hotel','Beach','Attraction','Other'];
@@ -41,7 +42,11 @@ export function normalizeStop(input,trip,now=new Date().toISOString()){
   if(!Number.isInteger(duration)||duration<0||duration>10080) throw Error('Duration must be 0–10080 minutes.');
   const sortOrder=input.sortOrder===undefined||input.sortOrder===null?1000000:Number(input.sortOrder);
   if(!Number.isInteger(sortOrder)||sortOrder<0||sortOrder>100000000) throw Error('Invalid itinerary order.');
-  return {id:input.id||uid(),tripId:trip.id,placeId:input.placeId||null,title,date,time,durationMinutes:duration,kind:STOP_KINDS.includes(input.kind)?input.kind:'Activity',fixed:!!input.fixed,sortOrder,notes:cleanText(input.notes,2000),...normalizeLeg(input),createdAt:input.createdAt||now,updatedAt:now};
+  const predecessorId=String(input.predecessorId||'').trim()||null;
+  if(predecessorId&&predecessorId.length>120)throw Error('Predecessor reference too long.');
+  const lagMinutes=Number(input.lagMinutes??0);
+  if(!Number.isInteger(lagMinutes)||lagMinutes<0||lagMinutes>1440)throw Error('Buffer after predecessor must be 0–1440 minutes.');
+  return {id:input.id||uid(),tripId:trip.id,placeId:input.placeId||null,title,date,time,durationMinutes:duration,kind:STOP_KINDS.includes(input.kind)?input.kind:'Activity',fixed:!!input.fixed,sortOrder,predecessorId,lagMinutes,notes:cleanText(input.notes,2000),...normalizeLeg(input),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function normalizePacking(input,trip,now=new Date().toISOString()){
   const label=cleanText(input.label,150),qty=Number(input.quantity??1);
@@ -85,6 +90,7 @@ export function validateBackup(data){
       if(r.type==='annotation'){if(data.schemaVersion===1)throw Error('Legacy backup cannot contain annotations.');const a=r.data;if(!['pin','line','area'].includes(a.kind)||!Array.isArray(a.points)||!a.label||a.points.length>(200)||a.points.length<(a.kind==='pin'?1:a.kind==='line'?2:3)||(a.kind==='pin'&&a.points.length!==1)||a.points.some(p=>!validCoords(p.lat,p.lng)))throw Error('Invalid map annotation');if(a.tripId&&!tripMap.has(a.tripId))throw Error('Annotation trip reference missing');}
     }catch{throw Error(`Backup record is invalid: ${r.type}`);}
   }
+  for(const trip of tripMap.values())dependencyOrder(data.records.filter(r=>r?.type==='stop').map(r=>r.data),trip.id);
   const cmds=new Set();for(const o of data.outbox){
     if(!o||typeof o.commandId!=='string'||!o.commandId||cmds.has(o.commandId)||!VALID_TYPES.includes(o.entityType)||typeof o.entityId!=='string'||!['upsert','delete'].includes(o.verb)||o.state!=='LOCAL_ONLY_ADAPTER_NOT_CONNECTED')throw Error('Backup contains invalid command history.');
     cmds.add(o.commandId);
