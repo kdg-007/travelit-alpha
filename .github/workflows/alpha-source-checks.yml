@@ -1,0 +1,20 @@
+name: TravelIt Alpha source checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate JavaScript modules
+        run: |
+          for file in js/*.js sw.js; do node --check "$file"; done
+      - name: Validate consumer flows and legacy backup
+        run: node --test tests/*.test.mjs
