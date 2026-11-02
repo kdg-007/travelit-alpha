@@ -52,7 +52,9 @@ try{
  await page.getByText('Flashlight').waitFor();
  await page.locator('[data-view="explore"]').last().click();
  await page.locator('[data-action="show-map"]').first().click();
- await page.locator('.map-online-frame iframe').waitFor();
+ await page.locator('#travelit-live-map').waitFor();
+ assert.equal(await page.locator('#travelit-live-map').isVisible(),true);
+ assert.equal(await page.locator('[data-action="live-map-pick"]').count(),1);
  assert.match(await page.locator('.map-advanced summary').innerText(),/Offline maps/);
  await page.locator('[data-view="more"]').last().click();
  const downloadEvent=page.waitForEvent('download');
