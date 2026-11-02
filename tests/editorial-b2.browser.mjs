@@ -40,7 +40,7 @@ try{
  await page.screenshot({path:'/tmp/travelit-b2-image.png'});
  await page.locator('#place-cover-file').setInputFiles('/tmp/travelit-b2-image.png');
  await page.locator('#modal-form button[type=submit]').click();
- await page.locator('.story-cover img').first().waitFor({timeout:12000});
+ await page.locator('.explore-feature-photo img, .story-cover img').first().waitFor({timeout:12000});
  await page.locator('[data-view="photos"]').last().click();
  assert.equal(await page.locator('.photo-story img').count(),1);
  await page.reload({waitUntil:'networkidle'});
@@ -53,7 +53,7 @@ try{
  const download=await downloadPromise;
  const bytes=readFileSync(await download.path());
  const backup=JSON.parse(bytes.toString('utf8'));
- assert.equal(backup.schemaVersion,6);
+ assert.equal(backup.schemaVersion,7);
  assert.equal(backup.records.filter(x=>x.type==='stop').length,2);
  assert.equal(backup.records.filter(x=>x.type==='place').length,1);
  assert.ok(backup.records.find(x=>x.type==='place').data.coverImage.startsWith('data:image/jpeg;base64,'));

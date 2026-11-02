@@ -12,7 +12,7 @@ test('Explore uses editorial stories rather than raw URL panels',()=>{
 });
 test('Today does not expose engineering readiness warnings',()=>{
  const a=app.slice(app.indexOf('function renderToday(){'),app.indexOf('async function savePackingBatch'));
- assert.match(a,/empty-essentials/);assert.match(a,/editorial-stop/);
+ assert.match(a,/editorial-today-empty/);assert.match(a,/editorial-stop/);
  assert.doesNotMatch(a,/Offline limitation:|renderPreparation\(/);
 });
 test('Itinerary supports multiple visible row edits and one guarded save',()=>{
@@ -44,9 +44,9 @@ test('existing travel legs and fixed bookings remain when editing day-grid field
  const edited=normalizeStop({...old,title:'Breakfast',time:'08:30'},trip);
  assert.equal(edited.fixed,true);assert.equal(edited.legDistanceKm,12);assert.equal(edited.legTravelMinutes,24);
 });
-test('photo tab previews only explicitly saved local cover images',()=>{
+test('Photos combines native local pictures with saved-place covers without fake remote thumbnails',()=>{
  const section=app.slice(app.indexOf('function renderPhotos(){'),app.indexOf('function renderMoreTechnical'));
- assert.match(section,/state\.places\.filter\(p=>p\.coverImage\)/);
+ assert.match(section,/galleryItems\(state\.photos,state\.places/);
  assert.match(section,/No photos yet/);assert.doesNotMatch(section,/automatically imported|automatically geolocated/);
 });
 test('status bar remains protected without hiding primary app navigation',()=>{

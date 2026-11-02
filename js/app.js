@@ -10,6 +10,7 @@ import {STARTER_BRANCHES,addPackingBranch,wirePackingTree,collectPackingTree} fr
 import {normalizeAnnotation,exactCoordinatesFromLink,assessOfflineTrip,mapBounds} from './map-tools.js';
 import {mapMarkup,mapClickToGeo} from './map-view.js';
 import {normalizeLocalNote,previewNote,linkedNotes} from './local-notes.js';
+import {normalizePhoto,galleryItems} from './photo-stories.js';
 import {timelineForDay,timelinePosition,shiftTimelineStop,formatClock} from './travel-timeline.js';
 import {dependencyOrder,dependencyConflicts,proposeDependencyReflow} from './trip-dependencies.js';
 import {mountLiveMap,destroyLiveMap,setLiveMapPinMode,focusLiveMap,fitLiveMap,placedMarkers} from './live-map.js';
@@ -31,7 +32,7 @@ const $=s=>document.querySelector(s);
 let modalDirty=false,modalReturnFocus=null,modalBaseRevisions={},modalBasePresence={},modalBaseEpoch=null,modalBaseMapRevision=0,workspaceChannel=null,externalRefreshTimer=null,localOperationDepth=0,versionObsolete=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const navigation=[['explore','Explore','⌖'],['trips','Trips','▤'],['today','Today','◷'],['photos','Photos','▧'],['more','More','⋯']];
-const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],notes:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',itineraryDisplay:'timeline',search:'',category:'All',stageFilter:'All',calendarMonth:'',chosenDay:'',toastTimer:null};
+const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],notes:[],photos:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',itineraryDisplay:'timeline',search:'',category:'All',stageFilter:'All',photoFilter:'all',calendarMonth:'',chosenDay:'',toastTimer:null};
 state.recordRevisions={};state.recordPresence={};state.workspaceEpoch=null;state.workspaceRevision=0;state.mapRevision=0;
 const isOnline=()=>navigator.onLine;
 const byTrip=type=>type.filter(v=>v.tripId===state.selectedTrip);
@@ -43,7 +44,7 @@ const dateShort=d=>{if(!d)return '';const [y,m,day]=d.split('-');return `${m}/${
 function colorStatus(){const e=$('#connection-pill');if(!e)return;e.textContent=isOnline()?'On-device only':'Offline · on-device';e.classList.toggle('offline',!isOnline());}
 function toast(msg,error=false){const t=$('#toast');t.textContent=msg;t.className='toast'+(error?' error':'');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>t.classList.add('hidden'),4400);}
 function setNav(view){state.view=view;const url=new URL(location.href);url.searchParams.set('view',view);['title','text','url'].forEach(k=>url.searchParams.delete(k));history.replaceState(null,'',url);render();}
-async function refresh(){const data=await allData(state.db);const info=await getWorkspaceMetadata(state.db);state.recordRevisions=Object.fromEntries(data.records.map(r=>[r.key,r.localRevision??0]));state.recordPresence=Object.fromEntries(data.records.map(r=>[r.key,true]));state.workspaceEpoch=info.epoch;state.workspaceRevision=info.revision;state.mapRevision=info.mapRevision;const of=type=>data.records.filter(r=>r.type===type).map(r=>r.data);state.places=of('place').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));state.trips=of('trip').sort((a,b)=>a.startDate.localeCompare(b.startDate));state.stops=of('stop');state.packing=of('packing');state.vehicles=of('vehicle');state.expenses=of('expense');state.notes=of('note');state.annotations=of('annotation');state.keepitAssociations=of('keepitAssociation');state.outbox=data.outbox;state.recovery=await recoveryInfo(state.db);const packs=await listMapPacks(state.db);state.mapPacks=[];state.mapFaults=[];for(const pack of packs){if(await verifyMapPack(pack))state.mapPacks.push(pack);else state.mapFaults.push(pack.name||'Unnamed corrupt map');}for(const region of await listAtlasRegions(state.db)){if(await verifyRegionManifest(region))state.mapPacks.push(region);else state.mapFaults.push(region.name||'Corrupt regional atlas');}const active=await getSetting(state.db,'active-map-pack-id');state.activePackId=active==='__none__'?null:(state.mapPacks.some(p=>p.id===active)?active:(state.mapPacks[0]?.id||null));if(!selected()&&state.trips.length)state.selectedTrip=state.trips[0].id;}
+async function refresh(){const data=await allData(state.db);const info=await getWorkspaceMetadata(state.db);state.recordRevisions=Object.fromEntries(data.records.map(r=>[r.key,r.localRevision??0]));state.recordPresence=Object.fromEntries(data.records.map(r=>[r.key,true]));state.workspaceEpoch=info.epoch;state.workspaceRevision=info.revision;state.mapRevision=info.mapRevision;const of=type=>data.records.filter(r=>r.type===type).map(r=>r.data);state.places=of('place').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));state.trips=of('trip').sort((a,b)=>a.startDate.localeCompare(b.startDate));state.stops=of('stop');state.packing=of('packing');state.vehicles=of('vehicle');state.expenses=of('expense');state.notes=of('note');state.photos=of('photo');state.annotations=of('annotation');state.keepitAssociations=of('keepitAssociation');state.outbox=data.outbox;state.recovery=await recoveryInfo(state.db);const packs=await listMapPacks(state.db);state.mapPacks=[];state.mapFaults=[];for(const pack of packs){if(await verifyMapPack(pack))state.mapPacks.push(pack);else state.mapFaults.push(pack.name||'Unnamed corrupt map');}for(const region of await listAtlasRegions(state.db)){if(await verifyRegionManifest(region))state.mapPacks.push(region);else state.mapFaults.push(region.name||'Corrupt regional atlas');}const active=await getSetting(state.db,'active-map-pack-id');state.activePackId=active==='__none__'?null:(state.mapPacks.some(p=>p.id===active)?active:(state.mapPacks[0]?.id||null));if(!selected()&&state.trips.length)state.selectedTrip=state.trips[0].id;}
 async function finishMapChange(){await refresh();workspaceChannel?.announce('map-edit');}
 async function commit(type,value){const guard=guardedContext(type,value.id);await writeLocally(()=>guardedSaveRecord(state.db,type,value,guard));}
 /** A failed save must never leave a packing checkbox appearing saved. */
@@ -364,11 +365,20 @@ function renderNav(){const nav=items=>items.map(([v,l,icon])=>`<button class="na
 function renderExplore(){
  const filters=['All',...PLACE_CATEGORIES],statuses=['All',...DISCOVERY_STAGES];
  const counts=discoveryCounts(state.places);
- const match=state.places.filter(p=>(state.category==='All'||p.category===state.category)&&(state.stageFilter==='All'||(p.stage||'Idea')===state.stageFilter)&&[p.name,p.notes,p.sourceUrl].join(' ').toLowerCase().includes(state.search.toLowerCase()));
- return `<div class="library-toolbar"><div><h2>Saved places</h2><span class="count-label">${state.places.length} saved</span></div><div class="action-line">${action('Map','show-map','button button-small')}${action('+ Save','add-place','button button-primary button-small')}</div></div>
- <div class="search-row compact-search"><input class="search-input" id="explore-search" placeholder="Search places and links" aria-label="Search saved discoveries" value="${esc(state.search)}"><select id="category-filter" aria-label="Filter destination category">${selOptions(filters,state.category)}</select></div>
- ${state.places.length?`<div class="inbox-stages compact-stage" role="group" aria-label="Filter idea status">${statuses.map(st=>`<button type="button" class="stage-chip ${state.stageFilter===st?'active':''}" data-stage-filter="${esc(st)}" aria-pressed="${state.stageFilter===st}">${esc(st)} <span>${st==='All'?state.places.length:counts[st]}</span></button>`).join('')}</div>`:''}
- ${match.length?`<div class="story-grid">${match.map(p=>`<article class="story-card"><div class="story-cover">${placeCover(p)}</div><div class="story-meta"><span>${esc(p.category)}</span><span>${esc(p.stage||'Idea')}</span></div><h3>${esc(p.name)}</h3>${p.notes?`<p>${esc(p.notes)}</p>`:''}<div class="story-actions">${action('Details','place:'+p.id,'button button-small')}${action('Add to trip','plan-place:'+p.id,'button button-small')}${p.sourceUrl?link('Open link',p.sourceUrl):''}</div></article>`).join('')}</div>`:`<div class="quiet-empty"><strong>${state.places.length?'No matching places':'No places saved yet'}</strong>${!state.places.length?action('Save a place','add-place','button button-primary button-small'):''}</div>`}`;
+ const match=state.places.filter(p=>(state.category==='All'||state.category===p.category)&&(state.stageFilter==='All'||state.stageFilter===(p.stage||'Idea'))&&[p.name,p.notes,p.sourceUrl].join(' ').toLowerCase().includes(state.search.toLowerCase()));
+ const featured=match.find(p=>p.coverImage)||null;
+ const rest=featured?match.filter(p=>p.id!==featured.id):match;
+ const feature=featured?'<section class="explore-feature"><div class="explore-feature-copy"><span class="eyebrow">'+esc(featured.category)+'</span><h2>'+esc(featured.name)+'</h2>'
+  +(featured.notes?'<p>'+esc(featured.notes)+'</p>':'')+'<div class="action-line">'+action('View place','place:'+featured.id,'button button-primary button-small')+
+  action('Add to trip','plan-place:'+featured.id,'button button-small')+'</div></div><div class="explore-feature-photo">'+placeCover(featured)+'</div></section>':'';
+ return '<div class="editorial-explore"><section class="explore-collection"><div class="library-toolbar"><div><h2>Saved places</h2><span class="count-label">'+state.places.length+' saved</span></div><div class="action-line">'+action('Map','show-map','button button-small')+action('+ Save','add-place','button button-primary button-small')+'</div></div>'
+  +'<div class="search-row compact-search"><input class="search-input" id="explore-search" placeholder="Search places and saved links" aria-label="Search saved discoveries" value="'+esc(state.search)+'"><select id="category-filter" aria-label="Filter destination category">'+selOptions(filters,state.category)+'</select></div>'
+  +(state.places.length?'<div class="inbox-stages compact-stage" role="group" aria-label="Filter idea status">'+statuses.map(st=>'<button type="button" class="stage-chip '+(state.stageFilter===st?'active':'')+'" data-stage-filter="'+esc(st)+'" aria-pressed="'+(state.stageFilter===st)+'">'+esc(st)+' <span>'+(st==='All'?state.places.length:counts[st])+'</span></button>').join('')+'</div>':'')
+  +feature
+  +(rest.length?'<div class="story-grid editorial-story-grid">'+rest.map(p=>'<article class="story-card editorial-story-card"><button type="button" class="story-cover" data-action="place:'+esc(p.id)+'" aria-label="View '+esc(p.name)+'">'+placeCover(p)+'</button><div class="story-content"><div class="story-meta"><span>'+esc(p.category)+'</span><span>'+esc(p.stage||'Idea')+'</span></div><h3>'+esc(p.name)+'</h3>'
+  +(p.notes?'<p>'+esc(p.notes)+'</p>':'')+'<div class="story-actions">'+action('View','place:'+p.id,'button button-small')+action('+ Trip','plan-place:'+p.id,'button button-small')+(p.sourceUrl?link('Original link',p.sourceUrl):'')+'</div></div></article>').join('')+'</div>':
+  !featured?'<div class="editorial-empty"><h3>'+(state.places.length?'No matching places':'No places saved yet')+'</h3>'+(!state.places.length?action('+ Save a place','add-place','button button-primary button-small'):'')+'</div>':'')
+  +'</section></div>';
 }
 function activePack(){return state.mapPacks.find(p=>p.id===state.activePackId)||null;}
 function atlasViewport(pack){return state.mapFixedBounds||streetReferenceBounds(pack.bounds);}
@@ -580,13 +590,16 @@ function renderRoadQuickList(queue,nextId){
 }
 function renderToday(){
  const now=new Date(),trip=pickTodayTrip(state.trips,now,state.selectedTrip);
- if(!trip)return `<section class="empty-essentials"><strong>No trip scheduled</strong>${action('Plan a trip','new-trip','button button-primary button-small')}</section>`;
+ if(!trip)return '<section class="editorial-today-empty"><span class="eyebrow">TODAY, AND THE DAYS AHEAD</span><h2>Room for another journey.</h2><p>No trip scheduled</p><div class="action-line">'+action('Plan a trip','new-trip','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>';
  const date=trip.localDate,onTrip=trip.onTrip,filtered=itineraryOrder(state.stops.filter(s=>s.tripId===trip.id&&s.date===(onTrip?date:trip.startDate)));
  const clock=tripClock(now,trip.timezone),nextDecision=nextTodayStop(filtered,clock,{onTrip}),next=nextDecision.stop,p=next?.placeId?placeById(next.placeId):null;
  const firstImage=state.places.find(q=>q.coverImage&&filtered.some(x=>x.placeId===q.id));
+ const moments=state.photos.filter(x=>x.tripId===trip.id).slice(0,4);
  return `<section class="journal-intro today-intro ${firstImage?'has-cover':''}"><div><span class="eyebrow">${onTrip?'TODAY ON THE ROAD':'UPCOMING JOURNEY'}</span><h2>${esc(trip.title)}</h2><p>${esc(dateShort(onTrip?date:trip.startDate))} · ${filtered.length} planned ${filtered.length===1?'stop':'stops'}</p>${action('Open itinerary','today-open-trip','button button-primary button-small')}</div>${firstImage?`<div class="journal-intro-cover">${placeCover(firstImage)}</div>`:''}</section>
  ${next?`<div class="next-moment"><span class="eyebrow">NEXT STOP</span><h3>${esc(next.title)}</h3><p>${esc(next.time||'Whenever you are ready')}${p?' · '+esc(p.name):''}</p><div class="story-actions">${p&&wazeUrl(p)?link('Directions',wazeUrl(p)):''}${p?.sourceUrl?link('Saved link',p.sourceUrl):''}</div></div>`:''}
- <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>`;
+ <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>
+ <div class="today-foot-actions">${action('+ Trip note','add-note:trip:'+trip.id,'button button-small')}${action('Photo stories','open-photos','button button-small')}</div>
+ ${moments.length?'<section class="today-moments"><div class="journal-heading"><div><span class="eyebrow">FROM OUR COLLECTION</span><h2>Moments to keep</h2></div></div><div class="today-moments-grid">'+moments.map(x=>'<button class="today-moment" data-action="photo-open:'+esc(x.id)+'"><img src="'+esc(x.image)+'" alt="'+esc(x.title)+'"><span>'+esc(x.title)+'</span></button>').join('')+'</div></section>':''}`;
 }
 async function savePackingBatch(){
  const trip=selected(),body=$('#packing-draft-body');if(!trip||!body)throw Error('Choose a trip and enter packing items first.');
@@ -604,9 +617,64 @@ function renderPacking(compact=false){
  ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.group||i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
  <h3 class="packing-add-title">Add multiple items</h3><div class="sheet-scroll"><table class="packing-table packing-entry"><thead><tr><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Person</th></tr></thead><tbody id="packing-draft-body">${Array.from({length:4},packingDraftRow).join('')}</tbody></table></div><div class="action-line">${action('+ Add row','packing-add-row','button button-small')}${action('Save all new items','packing-save-rows','button button-primary button-small')}</div><p class="tiny muted">Fill several rows, then save them together. Your list stays available on this device.</p></section>`;
 }
+function photoImportEditor(){
+ const tripOptions='<option value="">No trip</option>'+state.trips.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===state.selectedTrip?'selected':'')+'>'+esc(t.title)+'</option>').join('');
+ const placeOptions='<option value="">No place</option>'+state.places.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ const markup='<div class="photo-upload-form"><label class="photo-file-drop"><strong>Choose photos</strong><span>Up to 8 at a time</span><input id="f-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>'
+  +'<div class="form-grid">'+field('photoDate','Date (optional)','', 'date')
+  +'<div class="field"><label for="f-photo-trip">Trip (optional)</label><select id="f-photo-trip" name="tripId">'+tripOptions+'</select></div>'
+  +'<div class="field full"><label for="f-photo-place">Saved place (optional)</label><select id="f-photo-place" name="placeId">'+placeOptions+'</select></div></div></div>';
+ openModal('Add to photo stories',markup,async f=>{
+  const selectedFiles=Array.from($('#f-photos')?.files||[]);
+  if(!selectedFiles.length||selectedFiles.length>8)throw Error('Choose 1 to 8 photos.');
+  if(state.photos.length+selectedFiles.length>120)throw Error('This local collection supports up to 120 compressed photos.');
+  const now=new Date().toISOString(),records=[];
+  for(const file of selectedFiles){
+   const image=await imageCoverFromFile(file);
+   const title=file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,150)||'Family memory';
+   records.push(normalizePhoto({title,image,placeId:f.placeId,tripId:f.tripId,photoDate:f.photoDate},now));
+  }
+  state.photoFilter='photos';
+  await writeLocally(()=>guardedSaveRecords(state.db,'photo',records,{
+   expectedEpoch:modalBaseEpoch,expectedWorkspaceRevision:modalBaseRevisions.__workspaceRevision,
+   expectedRevisionByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,0])),
+   expectedPresenceByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,false]))
+  }));
+ },'Save photos');
+}
+function photoEditEditor(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ const options=(items,selected)=>'<option value="">None</option>'+items.map(v=>'<option value="'+esc(v.id)+'" '+(selected===v.id?'selected':'')+'>'+esc(v.title||v.name)+'</option>').join('');
+ const markup='<div class="photo-edit-cover"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"></div><div class="form-grid">'
+  +field('title','Title',p.title,'text','required maxlength="150"')
+  +field('photoDate','Date',p.photoDate||'','date')
+  +textArea('caption','Caption',p.caption||'')
+  +'<div class="field"><label for="f-tripId">Trip</label><select id="f-tripId" name="tripId">'+options(state.trips,p.tripId)+'</select></div>'
+  +'<div class="field"><label for="f-placeId">Place</label><select id="f-placeId" name="placeId">'+options(state.places,p.placeId)+'</select></div></div>';
+ openModal('Edit photo',markup,async f=>{
+  await commit('photo',normalizePhoto({...p,...f,id:p.id,createdAt:p.createdAt}));
+ },'Save');
+}
+function photoDetails(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ openModal(p.title,'<div class="photo-lightbox"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"><h3>'+esc(p.title)+'</h3>'
+  +(p.caption?'<p>'+esc(p.caption)+'</p>':'')
+  +'<div class="action-line">'+action('Edit','photo-edit:'+p.id,'button button-small')
+  +action('Remove','photo-delete:'+p.id,'button button-small button-danger')+'</div></div>');
+ $('#modal-body [data-action^="photo-edit:"]')?.addEventListener('click',()=>photoEditEditor(p.id));
+ $('#modal-body [data-action^="photo-delete:"]')?.addEventListener('click',async()=>{if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',p.id);}});
+}
 function renderPhotos(){
- const covers=state.places.filter(p=>p.coverImage);
- return covers.length?`<div class="library-toolbar"><div><span class="count-label">${covers.length} saved covers</span></div>${action('Saved places','go-explore','button button-small')}</div><div class="photo-story-grid">${covers.map(p=>`<button class="photo-story" data-action="place:${esc(p.id)}" aria-label="View ${esc(p.name)}">${placeCover(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>`:`<section class="empty-essentials"><strong>No photos yet</strong><span>Add a cover to a saved place.</span>${action('Browse places','go-explore','button button-primary button-small')}</section>`;
+ const items=galleryItems(state.photos,state.places,state.photoFilter,state.selectedTrip);
+ const all=galleryItems(state.photos,state.places);
+ const tabs=[['all','All'],['photos','Memories'],['places','Saved places']];
+ const filters='<div class="photo-filters">'+tabs.map(pair=>action(pair[1],'photo-filter:'+pair[0],'photo-filter'+(state.photoFilter===pair[0]?' active':''))).join('')+'</div>';
+ const cards=items.map((p,index)=>'<button type="button" class="photo-story editorial-photo '+(index%5===0?'large':'')+'" data-action="'+(p.kind==='cover'?'place:':'photo-open:')+esc(p.id)+'" aria-label="View '+esc(p.title)+'"><img src="'+esc(p.image)+'" loading="lazy" alt=""><span class="photo-caption"><small>'+esc(p.kind==='cover'?'Saved place':p.photoDate||'Our moments')+'</small><strong>'+esc(p.title)+'</strong></span></button>').join('');
+ return '<div class="editorial-gallery"><section class="editorial-gallery-head"><span class="eyebrow">OUR PHOTO STORIES</span><h2>The moments we keep.</h2><p>'+all.length+' '+(all.length===1?'memory':'memories')+' and saved views</p><div class="action-line">'+action('+ Add photos','photo-add','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>'
+  +filters+(items.length?'<div class="photo-story-grid editorial-photo-grid">'+cards+'</div>':
+   '<div class="editorial-empty"><span class="eyebrow">THE COLLECTION</span><h3>No photos yet</h3><p>Add a photo or save a cover for a favorite place.</p>'
+   +action('+ Add photos','photo-add','button button-primary button-small')+'</div>')
+  +'</div>';
 }
 function renderMoreTechnical(){return `${section('Library & settings','Your data stays in this local TravelIt workspace')}<div class="grid2"><div class="card"><h3>Local backup and recovery</h3><p class="subtext">Export TravelIt domain records, including any external KeepIt reference links, and local-only change history as JSON. This does not export the actual KeepIt notes, embedded assets, or verified sync receipts. Do not include sensitive documents: this backup is <strong>not encrypted</strong>.</p><div class="action-line">${action('Export backup','export-backup','button button-primary button-small')}${action('Restore backup','import-backup')}</div>${state.recovery?`<div class="alert blue" style="margin-top:12px"><strong>Previous workspace available</strong><p class="subtext">Snapshot created ${esc(state.recovery.savedAt)} · ${state.recovery.records} records</p><div class="action-line">${action('Undo last restore','undo-restore','button button-small')}</div></div>`:''}<div class="divider"></div><p class="tiny muted">Never clear browser data, uninstall the PWA, or switch devices without exporting and verifying a backup. Browser storage is not guaranteed permanent.</p></div><div class="card"><h3>Local data diagnostics</h3><div class="divider"></div><h4>Offline startup check</h4><p class="subtext">Verify that every application-shell file is actually cached. A registered service worker alone does not prove offline availability.</p><div class="action-line">${action('Verify offline shell','verify-offline-shell','button button-primary button-small')}</div>${state.shellReport?`<div role="status" class="alert ${state.shellReport.ready?'blue':'red'}" style="margin-top:10px"><b>${state.shellReport.ready?'Cached for this browser':'Offline shell not verified'}</b><p>${esc(state.shellReport.cached)}/${esc(state.shellReport.total)} required files cached · ${esc(state.shellReport.reason)}</p>${state.shellReport.missing.length?`<p class="tiny">Missing: ${esc(state.shellReport.missing.slice(0,5).join(', '))}${state.shellReport.missing.length>5?' …':''}</p>`:''}</div>`:'<p class="subtext">Not checked yet. This app does not claim offline readiness merely because it has a service worker.</p>'}<div class="divider"></div><p class="subtext">Checks this browser's database for successful temporary write/readback and scans existing records for broken references. This does not prove data survives device clearing or confirm cloud sync.</p><div class="action-line">${action('Run local diagnostic','run-local-diagnostic','button button-primary button-small')}</div>${state.storageHealth?`<div class="alert ${state.storageHealth.ok?'blue':'red'}" style="margin-top:10px">${esc(state.storageHealth.message)}</div>`:''}${state.localAudit?`<p class="subtext" style="margin-top:10px">${state.localAudit.recordCount} records · ${state.localAudit.errors} error(s) · ${state.localAudit.warnings} warning(s) · ${state.localAudit.commandCount} local-only changes</p>${state.localAudit.issues.length?`<ul class="offline-warnings">${state.localAudit.issues.slice(0,15).map(i=>`<li>${esc(i.code)}: ${esc(i.detail)} (${esc(i.entity)})</li>`).join('')}</ul>${state.localAudit.issues.length>15?'<p>Additional issues omitted from this view.</p>':''}`:'<p class="subtext">No relationship problems detected in the scanned records.</p>'}`:''}<p class="tiny muted">Backups are still required. A successful probe proves only immediate write/readback on this device.</p></div><div class="card"><h3>Integration status</h3><div class="row-between" style="margin-top:13px"><span>KeepIt Notes and document assets</span><span class="tag yellow">Not connected</span></div><p class="tiny muted">${state.keepitAssociations.length} saved native-note reference(s), if any, are external dependencies—not backed-up note content. Native notes are not connected in this standalone version.</p><div class="row-between" style="margin-top:13px"><span>LiveIt calendar</span><span class="tag yellow">Not connected</span></div><div class="row-between" style="margin-top:13px"><span>Offline GeoJSON reference maps</span><span class="tag ${activePack()?'':'yellow'}">${activePack()?'Imported locally':'No map loaded'}</span></div><div class="divider"></div><p class="subtext">${state.outbox.length} local change command(s) retained, not synchronized. Do not interpret this count as pending successful cloud delivery.</p></div><div class="card"><h3>Photo library</h3><div class="photo-placeholder" aria-hidden="true">▧</div><p class="subtext">The full travel-photo gallery will link to KeepIt media after the approved read-only bridge is verified. No personal images are imported into this local foundation.</p></div><div class="card"><h3>Travel documents</h3><div class="alert red" style="margin:13px 0"><b>Do not import passports, IDs, or tickets here.</b> Protected KeepIt previews, encryption at rest, and device authentication are required before this feature can be enabled.</div><p class="subtext">The document-wallet contract is in the specification package; this build contains no insecure substitute.</p></div>${renderVehicles()}</div>`;}
 function renderMore(){
@@ -807,6 +875,12 @@ function currentMapBounds(){
  return (pack?.regionAtlas||pack?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(pack.bounds):mapBounds(all);
 }
 async function handler(target){const actionName=target.dataset.action;if(!actionName)return;try{
+  if(actionName==='open-photos'){setNav('photos');return;}
+  if(actionName==='photo-add'){photoImportEditor();return;}
+  if(actionName.startsWith('photo-filter:')){state.photoFilter=actionName.slice(13);render();return;}
+  if(actionName.startsWith('photo-open:')){photoDetails(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-edit:')){photoEditEditor(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-delete:')){const id=actionName.slice(13);if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',id);}return;}
   if(actionName==='schedule-reflow'){previewScheduleReflow();return;}
   if(actionName.startsWith('itinerary-mode:')){state.itineraryDisplay=actionName.slice(15)==='table'?'table':'timeline';render();return;}
   if(actionName.startsWith('timeline-open:')){const v=state.stops.find(x=>x.id===actionName.slice(14));if(!v)throw Error('Activity not found');stopEditor(v);return;}

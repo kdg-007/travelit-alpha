@@ -9,10 +9,12 @@ test('Explore removes inspirational hero and provides direct places, search, map
  assert.doesNotMatch(s,/Somewhere next|Every journey starts|Saved for another day|YOUR COLLECTION/);
  for(const token of ['Saved places','id="explore-search"','show-map','add-place','story-grid'])assert.ok(s.includes(token),token);
 });
-test('Photos has a short, useful empty state',()=>{
+test('Photos has an actionable gallery and a concise empty state',()=>{
  const s=between('function renderPhotos(){','function renderMoreTechnical(){');
  assert.match(s,/No photos yet/);
- assert.doesNotMatch(s,/gallery in the making|About photos|Photo stories|our memories/i);
+ assert.match(s,/galleryItems/);
+ assert.match(s,/photo-add/);
+ assert.doesNotMatch(s,/automatically imported|automatically geolocated|offline tile cache/i);
 });
 test('My Library retains safe backup functions without disabled document card or redundant headings',()=>{
  const s=between('function renderMore(){','function render(){');

@@ -9,8 +9,8 @@ const trip={id:'trip-1',title:'Sagada',startDate:'2026-12-05',endDate:'2026-12-0
 test('native note contains actual content and relationship in v6 backup',()=>{
  const note=normalizeLocalNote({id:'note123',title:'Packing',content:'# Preparations\n- Rain jacket',targetType:'trip',targetId:trip.id},when);
  const records=[{key:'trip:'+trip.id,type:'trip',id:trip.id,data:{...trip,timezone:'Asia/Manila',createdAt:when,updatedAt:when}},{key:'note:'+note.id,type:'note',id:note.id,data:note}];
- assert.equal(SCHEMA_VERSION,6);
- assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:6,records,outbox:[]}),true);
+ assert.equal(SCHEMA_VERSION,7);
+ assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:7,records,outbox:[]}),true);
  assert.equal(records[1].data.content,'# Preparations\n- Rain jacket');
  assert.throws(()=>validateBackup({format:'travelit-local-backup',schemaVersion:5,records,outbox:[]}));
 });

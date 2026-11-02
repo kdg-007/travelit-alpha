@@ -35,8 +35,10 @@ test('legacy v5 trip and packing backup remains valid',()=>{
  const rows=[{key:'trip:'+trip.id,id:trip.id,type:'trip',data:trip},{key:'packing:'+item.id,id:item.id,type:'packing',data:item}];
  assert.equal(validateBackup({format:'travelit-local-backup',schemaVersion:5,records:rows,outbox:[]}),true);
 });
-test('Photos tab is honest about missing photo storage',()=>{
+test('Photos tab stores bounded local gallery copies and keeps saved-place covers',()=>{
  assert.match(app,/function renderPhotos/);
  assert.match(app,/No photos yet/);
+ assert.match(app,/function photoImportEditor/);
+ assert.match(app,/guardedSaveRecords\(state\.db,'photo',records/);
  assert.match(app,/function placeCover/);
 });
