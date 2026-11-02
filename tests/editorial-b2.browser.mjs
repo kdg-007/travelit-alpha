@@ -40,7 +40,7 @@ try{
  await page.screenshot({path:'/tmp/travelit-b2-image.png'});
  await page.locator('#place-cover-file').setInputFiles('/tmp/travelit-b2-image.png');
  await page.locator('#modal-form button[type=submit]').click();
- await page.locator('.story-cover img').first().waitFor({timeout:12000});
+ await page.locator('.explore-feature-photo img, .story-cover img').first().waitFor({timeout:12000});
  await page.locator('[data-view="photos"]').last().click();
  assert.equal(await page.locator('.photo-story img').count(),1);
  await page.reload({waitUntil:'networkidle'});
