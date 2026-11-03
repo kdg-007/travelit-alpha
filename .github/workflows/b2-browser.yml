@@ -13,6 +13,7 @@ on:
       - 'tests/dependencies-d1.browser.mjs'
       - 'tests/packing-tree-p1.browser.mjs'
       - 'tests/gallery-g1.browser.mjs'
+      - 'tests/media-preview-v1.browser.mjs'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -38,3 +39,4 @@ jobs:
           node tests/dependencies-d1.browser.mjs
           node tests/packing-tree-p1.browser.mjs
           node tests/gallery-g1.browser.mjs
+          node tests/media-preview-v1.browser.mjs
