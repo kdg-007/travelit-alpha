@@ -14,7 +14,7 @@ const port=8642,url='http://127.0.0.1:'+port+'/';
 const server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1'],{cwd:preview.outputDir,stdio:'ignore'});
 const browser=await webkit.launch({headless:true});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true,serviceWorkers:'allow'});
-const page=await context.newPage(),faults=[];
+let page=await context.newPage();const faults=[];
 page.on('pageerror',e=>faults.push(e.message));
 async function ready(){
  for(let n=0;n<60;n++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,250));}
@@ -64,9 +64,13 @@ try{
  await page.locator('[data-accept="standalone"]').check();
  await page.locator('[data-accept="offline"]').check();
  await context.setOffline(true);
- // The QA guide is an actual separate HTML navigation, not the root shell
- // fallback. Catch accidental delivery of index.html as qa.html in Airplane Mode.
- await page.reload({waitUntil:'domcontentloaded'});
+ // Cold-start a new WebKit page instead of reloading an existing page while
+ // the runner changes network state. This models reopening an installed app.
+ // The QA guide must be the cached separate HTML, not root fallback content.
+ await page.close();
+ page=await context.newPage();
+ page.on('pageerror',e=>faults.push(e.message));
+ await page.goto(url+'qa.html',{waitUntil:'domcontentloaded'});
  await page.getByRole('heading',{name:'iPhone acceptance checklist'}).waitFor();
  assert.equal(await page.locator('[data-accept="standalone"]').isChecked(),true);
  assert.equal(await page.locator('[data-accept="offline"]').isChecked(),true);
