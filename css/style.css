@@ -177,7 +177,7 @@
  .photo-story-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .topbar #today-shortcut{display:none}
 }
-@media(max-width:720px) and (display-mode:standalone){body::before{height:max(env(safe-area-inset-top,0px),54px);background:#fdfdfd;z-index:100}}
+/* Standalone inset now follows the OS safe-area, rather than obscuring the header. */
 
 /* B3 — consumer-first mobile layout: keep controls visible, collapse filler, preserve SIMA palette. */
 .app-main,main,.topbar,.top-actions,.essential-library,.library-toolbar{min-width:0}
@@ -490,3 +490,9 @@
 .media-preview-help:empty{display:none}
 .media-preview-help{color:var(--muted);font-size:12px;margin-top:-8px}
 @media(max-width:600px){.editorial-story-card .story-cover-wrap .story-cover{height:145px}.story-cover-upload{font-size:11px;padding:6px 9px;min-height:33px;right:6px;bottom:6px}.media-cover-frame .cover-category{font-size:17px}}
+
+/* RC1 safe-area: reserve the iOS system inset within the header itself.
+   Existing fixed body::before paint covers only the actual inset while scrolling. */
+@media(max-width:720px) and (display-mode:standalone){
+ .topbar{padding-top:calc(9px + env(safe-area-inset-top,0px))}
+}
