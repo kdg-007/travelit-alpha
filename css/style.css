@@ -507,3 +507,23 @@
  .timeline-empty{padding:28px 14px;line-height:1.5}
  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px));left:12px;right:12px;max-width:none;padding:10px 13px;font-size:13px}
 }
+
+/* RC1: All six trip sections remain discoverable on narrow phones. */
+.trip-switcher-label{width:100%;margin:0 0 9px}
+@media(max-width:720px){
+ .trip-workspace .view-tabs{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;overflow:visible;max-width:100%;padding:0 0 12px;
+ }
+ .trip-workspace .view-tabs button{
+  min-width:0;width:100%;min-height:44px;display:flex;
+  align-items:center;justify-content:center;flex:initial;
+  white-space:normal;line-height:1.25;font-size:12px;
+  padding:8px 4px;border:1px solid var(--line);background:#fff;
+ }
+ .trip-workspace .view-tabs button.active{
+  background:var(--mint);border-color:var(--teal);color:var(--teal);
+ }
+ .trip-workspace{margin-top:12px}
+ .trip-switcher{margin-bottom:14px}
+}
