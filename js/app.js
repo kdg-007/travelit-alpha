@@ -203,26 +203,29 @@ async function noteEditor(existing=null,targetType='general',targetId=null){
   +'<textarea id="f-content" name="content" rows="14" maxlength="100000" placeholder="What did you discover?"></textarea>'
   +'<div id="note-preview" class="note-preview hidden" aria-live="polite"></div>'
   +'<div class="note-save-status" id="note-save-status" role="status">Saved on this device when editing begins</div></div>';
- let timer=null, saving=false, needsSave=false, failed=null;
+ let timer=null, saving=false, needsSave=false, failed=null, editorForm=null;
  const store=async()=>{
   if(saving){needsSave=true;return;}
   saving=true;
   do{
    needsSave=false;
-   const body=$('#f-content'),title=$('#f-title'),status=$('#note-save-status');
-   if(!body||!title)break;
+   const body=editorForm?.querySelector('#f-content'),title=editorForm?.querySelector('#f-title'),status=editorForm?.querySelector('#note-save-status');
+   if(!editorForm?.isConnected || document.querySelector('#modal-form')!==editorForm || !body||!title)break;
    const obj=normalizeLocalNote({...initial,title:title.value,content:body.value});
    try{
     const guard={expectedEpoch:modalBaseEpoch,expectedRevisionByKey:{['note:'+obj.id]:modalBaseRevisions['note:'+obj.id]??0},
       expectedPresenceByKey:{['note:'+obj.id]:Boolean(modalBasePresence['note:'+obj.id])}};
     await guardedSaveRecord(state.db,'note',obj,guard);
     await refresh();
-    modalBaseRevisions['note:'+obj.id]=state.recordRevisions['note:'+obj.id]??0;
-    modalBasePresence['note:'+obj.id]=true;
-    initial.createdAt=obj.createdAt;
-    failed=null;
-    if(status)status.textContent='Saved on this device';
-    modalDirty=false;
+    // Never rewrite another modal's guard, status, or dirty flag after a slow save.
+    if(editorForm?.isConnected && document.querySelector('#modal-form')===editorForm){
+     modalBaseRevisions['note:'+obj.id]=state.recordRevisions['note:'+obj.id]??0;
+     modalBasePresence['note:'+obj.id]=true;
+     initial.createdAt=obj.createdAt;
+     failed=null;
+     if(status)status.textContent='Saved on this device';
+     modalDirty=false;
+    }
     workspaceChannel?.announce('edit');
    }catch(e){failed=e;if(status)status.textContent='Not saved: '+(e.message||String(e));break;}
   }while(needsSave);
@@ -237,14 +240,14 @@ async function noteEditor(existing=null,targetType='general',targetId=null){
  };
  openModal(existing?'Edit note':'New note',markup,async()=>{await flush();render();},'Done');
  $('#f-content').value=initial.content;
- const form=$('#modal-form');
+ const form=editorForm=$('#modal-form');
  form.addEventListener('input',()=>{
   if(timer)clearTimeout(timer);
-  const status=$('#note-save-status');if(status)status.textContent='Saving…';
+  const status=form.querySelector('#note-save-status');if(status)status.textContent='Saving…';
   timer=setTimeout(()=>void store(),650);
  });
- const body=$('#f-content');
- $('#modal-body').addEventListener('click',e=>{
+ const body=form.querySelector('#f-content');
+ form.addEventListener('click',e=>{
   const btn=e.target.closest('[data-action]');
   if(!btn)return;
   const kind=btn.dataset.action;
