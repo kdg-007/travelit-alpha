@@ -59,14 +59,20 @@ try{
   cpSync(resolve(path),join(staging,path),{force:true});
  }
  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.getRegistration();if(!reg)throw Error('Missing installed baseline worker');await reg.update();});
- await page.waitForFunction(async cacheName=>{
+ await page.waitForFunction(async({cacheName,oldCache})=>{
   try{
    const registration=await navigator.serviceWorker.getRegistration();
-   return (await caches.keys()).includes(cacheName)
-     && registration?.active?.state==='activated'
-     && navigator.serviceWorker.controller===registration.active;
+   const names=await caches.keys();
+   if(!names.includes(cacheName)||names.includes(oldCache)||registration?.installing||registration?.waiting
+       ||registration?.active?.state!=='activated'||navigator.serviceWorker.controller!==registration.active)return false;
+   const cache=await caches.open(cacheName);
+   const [entryPoint,backupModule]=await Promise.all([
+    cache.match(new URL('./index.html',location.href).href),
+    cache.match(new URL('./js/backup.js',location.href).href)
+   ]);
+   return Boolean(entryPoint?.ok&&backupModule?.ok);
   }catch{return false;}
- },newName,{timeout:35000});
+ },{cacheName:newName,oldCache:oldName},{timeout:45000});
  // Precaching must fetch CURRENT bytes even if the HTTP cache has stale B4 modules.
  const moduleCheck=await page.evaluate(async cacheName=>{
   const cache=await caches.open(cacheName);
