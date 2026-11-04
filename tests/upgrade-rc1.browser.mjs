@@ -67,6 +67,13 @@ try{
      && navigator.serviceWorker.controller===registration.active;
   }catch{return false;}
  },newName,{timeout:35000});
+ // Precaching must fetch CURRENT bytes even if the HTTP cache has stale B4 modules.
+ const moduleContents=await page.evaluate(async cacheName=>{
+  const cache=await caches.open(cacheName);
+  const found=await cache.match(new URL('./js/backup.js',location.href).href);
+  return found?.text()||'';
+ },newName);
+ assert.match(moduleContents,/export const MAX_BACKUP_IMPORT_BYTES/, 'New worker cached an obsolete B4 module');
  await page.reload({waitUntil:'domcontentloaded'});
  try{
   await page.locator('[data-view="trips"]').last().waitFor({timeout:12000});
