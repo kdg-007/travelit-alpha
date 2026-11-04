@@ -1,6 +1,7 @@
 import {cpSync,existsSync,mkdirSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {sealPreviewDirectory} from './preview-integrity.mjs';
 
 /** Source-only preview assembler. No user records, credentials or live data are copied.
  * The ZIP is NOT deployed. A separate HTTPS origin is required for iPhone acceptance.
@@ -60,7 +61,9 @@ export function buildRc1Preview({
  const boot=[
   '// RC1 preview refuses to run on the current GitHub Pages production origin.',
   '// This is an additional guard; it does not grant origin separation by path.',
-  "const unsafe=location.hostname.toLowerCase()==='kdg-007.github.io';",
+  "const host=location.hostname.toLowerCase();",
+  "const local=host==='localhost'||host==='127.0.0.1'||host==='[::1]';",
+  "const unsafe=host==='kdg-007.github.io'||(location.protocol!=='https:'&&!local);",
   'if(unsafe){',
   " const root=document.querySelector('#main');",
   " if(root)root.textContent='This RC1 preview will not run on the existing GitHub Pages origin. Use a separate HTTPS hostname for testing.';",
@@ -82,6 +85,9 @@ export function buildRc1Preview({
   '# TravelIt RC1 Preview — NOT FOR PRODUCTION',
   '',
   'This ZIP contains static app files only. It does not contain personal information or local user data.',
+  'All files are listed with SHA-256 digests in PREVIEW_INTEGRITY.json. This detects',
+  'missing or altered files; it is not a publisher signature or a substitute for',
+  'retrieving the package from the verified GitHub Actions release-candidate run.',
   'Only host it on an HTTPS ORIGIN DISTINCT from the existing TravelIt site. A different',
   'repository path under kdg-007.github.io is NOT an isolated origin and is intentionally blocked.',
   '',
@@ -92,13 +98,16 @@ export function buildRc1Preview({
   'Do not enter real family records, private bookings, IDs or sensitive documents.',
   'Backup/export files are not encrypted. Map tiles require internet; offline routing is not implemented.',
   'No production deployment or automatic merge is performed by this package.',
+  'The app refuses to start on the existing kdg-007.github.io origin or an',
+  'insecure non-local HTTP origin. localhost HTTP is allowed for developer tests only.',
   '',
   'A future approved release must still pass a physical iPhone standalone PWA smoke test.',
   ''
  ].join('\n');
  save('PREVIEW_README.md',readme);
  if(!existsSync(join(outputDir,'js/preview-bootstrap.js')))throw Error('Preview bootstrap missing.');
- return {outputDir,cache,assetCount:assets.length,appEntry:entry};
+ const integrity=sealPreviewDirectory(outputDir);
+ return {outputDir,cache,assetCount:assets.length,appEntry:entry,integrityFiles:integrity.files.length};
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const result=buildRc1Preview();

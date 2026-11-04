@@ -21,6 +21,9 @@ jobs:
       - name: Build isolated-origin RC1 acceptance package (not deployed)
         if: startsWith(github.head_ref, 'release/')
         run: node scripts/build-rc1-preview.mjs
+      - name: Verify every file in the isolated preview package
+        if: startsWith(github.head_ref, 'release/')
+        run: node scripts/preview-integrity.mjs artifacts/rc1-preview
       - name: Preserve RC1 preview package
         if: startsWith(github.head_ref, 'release/')
         uses: actions/upload-artifact@v4

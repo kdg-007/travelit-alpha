@@ -73,9 +73,37 @@ try{
  await blocked.goto('https://kdg-007.github.io/rc1-preview/',{waitUntil:'domcontentloaded'});
  await blocked.locator('#main').getByText('This RC1 preview will not run on the existing GitHub Pages origin').waitFor();
  assert.equal(await blocked.locator('[data-view="trips"]:visible').count(),0,'Blocked preview must not start app');
- const blockedStores=await blocked.evaluate(async()=>({dbs:await indexedDB.databases(),caches:await caches.keys()}));
- assert.equal(blockedStores.dbs.length,0,'Blocked preview must never open a database');
- assert.equal(blockedStores.caches.length,0,'Blocked preview must never install a cache');
+ // Simulate a real existing TravelIt user on the SAME GitHub Pages origin.
+ // Loading an unsafe preview may not open/replace the production database or cache.
+ const seeded=await blocked.evaluate(async()=>{
+  const rq=indexedDB.open('travelit-foundation',4);
+  rq.onupgradeneeded=()=>{if(!rq.result.objectStoreNames.contains('records'))rq.result.createObjectStore('records',{keyPath:'key'});};
+  const db=await new Promise((resolve,reject)=>{rq.onsuccess=()=>resolve(rq.result);rq.onerror=()=>reject(rq.error);});
+  const tx=db.transaction('records','readwrite');
+  tx.objectStore('records').put({key:'trip:do-not-touch',type:'trip',id:'do-not-touch',data:{id:'do-not-touch',title:'Existing family trip'}});
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  db.close();
+  const cache=await caches.open('travelit-foundation-shell-v0.33-b4');
+  await cache.put('/travelit-alpha/index.html',new Response('existing application'));
+  localStorage.setItem('travelit-workspace-changes-v1','ORIGINAL');
+  return {dbs:await indexedDB.databases(),caches:await caches.keys()};
+ });
+ assert.equal(seeded.dbs.length,1);
+ assert.equal(seeded.caches.length,1);
+ await blocked.reload({waitUntil:'domcontentloaded'});
+ await blocked.locator('#main').getByText('This RC1 preview will not run on the existing GitHub Pages origin').waitFor();
+ const blockedStores=await blocked.evaluate(async()=>{
+  const rq=indexedDB.open('travelit-foundation',4);
+  const db=await new Promise((resolve,reject)=>{rq.onsuccess=()=>resolve(rq.result);rq.onerror=()=>reject(rq.error);});
+  const tx=db.transaction('records','readonly'),r=tx.objectStore('records').get('trip:do-not-touch');
+  const item=await new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  db.close();
+  return {dbs:await indexedDB.databases(),caches:await caches.keys(),item,topic:localStorage.getItem('travelit-workspace-changes-v1')};
+ });
+ assert.deepEqual(blockedStores.dbs.map(x=>x.name),['travelit-foundation'],'Blocked preview must not create another DB');
+ assert.deepEqual(blockedStores.caches,['travelit-foundation-shell-v0.33-b4'],'Blocked preview must not replace the production shell');
+ assert.equal(blockedStores.item?.data?.title,'Existing family trip','Existing TravelIt record changed');
+ assert.equal(blockedStores.topic,'ORIGINAL','Existing workspace notice storage changed');
  console.log('RC1_PREVIEW_BROWSER_PASS: test watermark, separate DB/topic/cache, controlled offline shell, offline reopen');
 }finally{
  await context.setOffline(false).catch(()=>{});
