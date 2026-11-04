@@ -35,11 +35,11 @@ try{
  assert.equal(await m.locator('html').getAttribute('data-theme'),'dark');
  await m.locator('#sidebar-toggle').tap();
  assert.equal(await m.locator('#app').getAttribute('data-sidebar'),'drawer');
- assert.equal(await m.locator('#sidebar').isVisible(),true);
+ assert.equal(await m.locator('#travel-sidebar').isVisible(),true);
  assert.equal(await m.locator('#main').isVisible(),true);
  await m.locator('#sidebar-scrim').tap({position:{x:365,y:180}});
  assert.notEqual(await m.locator('#app').getAttribute('data-sidebar'),'drawer');
- assert.equal(await m.locator('#sidebar').isVisible(),false);
+ assert.equal(await m.locator('#travel-sidebar').isVisible(),false);
  assert.deepEqual(errors,[],'No desktop JS errors');
  assert.deepEqual(mErrors,[],'No mobile JS errors');
  console.log('PASS: RC2 dark-first, user theme, sidebar 3 states, saved layout and dismissible phone drawer');
