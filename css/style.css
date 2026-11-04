@@ -527,3 +527,69 @@
  .trip-workspace{margin-top:12px}
  .trip-switcher{margin-bottom:14px}
 }
+
+
+/* RC2 visual refinement — independent UI settings, dark-first and collapsible sidebar.
+   Existing trip data, routes, notes and browser database are not changed. */
+html[data-theme="dark"]{
+ color-scheme:dark;--navy:#102e40;--navy-2:#17394b;--teal:#319d93;--mint:#23443f;
+ --paper:#0e1924;--card:#182633;--line:#365060;--text:#e9f2f5;
+ --muted:#b4c5ce;--red:#ffa09b;--shadow:0 9px 25px rgba(0,0,0,.2);
+}
+html[data-theme="dark"] body{background:var(--paper);color:var(--text)}
+html[data-theme="dark"] .topbar{background:rgba(19,35,48,.96)}
+html[data-theme="dark"] .mobile-nav{background:#142331;border-color:var(--line)}
+html[data-theme="dark"] .mobile-nav .navitem{color:#d2e3e9}
+html[data-theme="dark"] .mobile-nav .navitem.active{background:#24504b;color:#aff1e5}
+html[data-theme="dark"] .card,html[data-theme="dark"] .modal,
+html[data-theme="dark"] .placeholder,html[data-theme="dark"] .summary-tile,
+html[data-theme="dark"] .map-panel,html[data-theme="dark"] .photo-placeholder{background:var(--card);color:var(--text);border-color:var(--line)}
+html[data-theme="dark"] .button:not(.button-primary),html[data-theme="dark"] .view-tabs button,
+html[data-theme="dark"] .icon-button{background:#203443;color:var(--text);border-color:var(--line)}
+html[data-theme="dark"] .button-primary{color:#fff}
+html[data-theme="dark"] .field :is(input,textarea,select),html[data-theme="dark"] .search-input,
+html[data-theme="dark"] .modal :is(input,textarea,select){
+ background:#172b39;color:var(--text);border-color:var(--line)}
+html[data-theme="dark"] :is(.tag,.pill,.conn-pill,.notice,.alert):not(.red){background:#263947;color:var(--text)}
+html[data-theme="dark"] a{color:#88ded2}
+html[data-theme="dark"] a.button-primary{color:#fff}
+html[data-theme="dark"] .trip-workspace .view-tabs button.active{background:#24514a;color:#b1f1e5;border-color:#53a99f}
+html[data-theme="dark"] .template-preview,html[data-theme="dark"] .empty,
+html[data-theme="dark"] .small-record{background:var(--card);border-color:var(--line);color:var(--text)}
+html[data-theme="dark"] .media-preview-help,html[data-theme="dark"] .subtext{color:var(--muted)}
+.topbar-title{display:flex;align-items:center;gap:14px;min-width:0}
+.topbar-title>div{min-width:0}
+#sidebar-toggle,#theme-toggle{display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);border-radius:9px;width:42px;height:42px;background:var(--card);color:var(--text)}
+#sidebar-toggle:hover,#theme-toggle:hover{border-color:var(--teal)}
+#app[data-sidebar="hidden"] .sidebar{display:none}
+#app[data-sidebar="hidden"] .app-main{margin-left:0;width:100%}
+#app[data-sidebar="compact"] .sidebar{width:68px;padding:20px 7px}
+#app[data-sidebar="compact"] .sidebar .brand{padding:0 2px 24px;justify-content:center}
+#app[data-sidebar="compact"] .sidebar .brand>div:not(.brand-symbol),
+#app[data-sidebar="compact"] .sidebar .side-foot{display:none}
+#app[data-sidebar="compact"] .sidebar .brand-symbol{width:42px;height:42px}
+#app[data-sidebar="compact"] .sidebar .navitem{font-size:0;padding:12px;justify-content:center;gap:0}
+#app[data-sidebar="compact"] .sidebar .navicon{font-size:20px;width:26px}
+#app[data-sidebar="compact"] .app-main{margin-left:68px;width:calc(100% - 68px)}
+.sidebar-scrim{display:none}
+@media(max-width:720px){
+ #app .sidebar{display:none}
+ #app .app-main{margin-left:0;width:100%}
+ #app[data-sidebar="drawer"] .sidebar{display:flex!important;position:fixed;inset:0 auto 0 0;
+   width:min(290px,87vw);z-index:42;background:var(--navy);overflow-y:auto;box-shadow:12px 0 36px #0008}
+ #app[data-sidebar="drawer"] .sidebar-scrim{display:block;position:fixed;inset:0;border:0;
+   padding:0;background:rgba(1,9,15,.62);z-index:41}
+ #app[data-sidebar="drawer"] .app-main{margin-left:0;width:100%}
+ .topbar{gap:9px}
+ .topbar-title{gap:8px}
+ #sidebar-toggle,#theme-toggle{height:40px;width:40px;min-width:40px}
+ #sidebar-toggle{font-size:19px}
+ .top-actions{gap:7px}
+}
+@media(max-width:390px){
+ .topbar{padding-inline:9px}
+ .topbar-title{gap:6px}
+ .top-actions{gap:5px}
+ .topbar h1{font-size:20px}
+ #sidebar-toggle,#theme-toggle{height:38px;width:38px;min-width:38px}
+}
