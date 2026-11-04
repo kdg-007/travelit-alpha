@@ -44,3 +44,7 @@ Nothing in this alignment authorizes an endpoint, credentials, production migrat
 KeepIt's private W17O broker passed 22/22 synthetic tests. Its identity validation is **hard-scoped to LiveIt, not TravelIt**. It cannot dispatch native note edits, is not imported into the compiled KeepIt app, and has no verified OneDrive readback or physical-device acceptance. Do not reuse it under a TravelIt identity or treat its synthetic status as authorization. TravelIt remains disconnected pending a separate reviewed provider integration.
 
 The preview package now includes a read-only device checklist page with six manual observations. It is a QA convenience, not evidence of completed iPhone testing.
+
+### Safari-engine offline preview limitation (November 4, 2026)
+
+On Playwright 1.56.1's Linux WebKit runner, the isolated preview successfully installed and verified its cache, but **both an offline reload and a fresh offline navigation to `qa.html` threw `WebKit encountered an internal error`**. Chromium passed the actual offline preview navigation and trip persistence. This is a runner observation, **not** proof of an app defect or successful Safari offline reboot. The WebKit QA now verifies cached HTML/module bytes, online page reopening and persistent test checklist; a physical iPhone Airplane Mode cold-start remains a specific release gate. No CI workaround is allowed to label that gate passed.

@@ -63,14 +63,25 @@ try{
  assert.ok(!JSON.stringify(diagnostics).includes('Disposable Safari QA trip'),'Diagnostics must never export trip contents');
  await page.locator('[data-accept="standalone"]').check();
  await page.locator('[data-accept="offline"]').check();
- await context.setOffline(true);
- // Cold-start a new WebKit page instead of reloading an existing page while
- // the runner changes network state. This models reopening an installed app.
- // The QA guide must be the cached separate HTML, not root fallback content.
- await page.close();
- page=await context.newPage();
- page.on('pageerror',e=>faults.push(e.message));
- await page.goto(url+'qa.html',{waitUntil:'domcontentloaded'});
+ // On the Linux Playwright WebKit runner, switching the context offline
+ // makes both page.reload() and a fresh page.goto(qa.html) throw a browser-
+ // internal error. Neither result can certify or disprove iPhone offline boot.
+ // Instead prove the real distinct QA HTML and module are present in CacheStorage,
+ // then exercise a normal WebKit reload, without mislabeling it offline.
+ const cachedGuide=await page.evaluate(async()=>{
+  const keys=await caches.keys();
+  const name=keys.find(k=>k.startsWith('travelit-rc1-preview-shell-'));
+  if(!name)return {cached:false,html:false,module:false};
+  const cache=await caches.open(name);
+  const [guide,script]=await Promise.all([
+   cache.match(new URL('qa.html',location.href)),
+   cache.match(new URL('js/preview-readiness.js',location.href))
+  ]);
+  return {cached:true,html:Boolean(guide?.ok&&(await guide.text()).includes('iPhone acceptance checklist')),
+   module:Boolean(script?.ok&&(await script.text()).includes('collectPreviewReadiness'))};
+ });
+ assert.deepEqual(cachedGuide,{cached:true,html:true,module:true},'Safari engine did not cache distinct QA page and module');
+ await page.reload({waitUntil:'domcontentloaded'});
  await page.getByRole('heading',{name:'iPhone acceptance checklist'}).waitFor();
  assert.equal(await page.locator('[data-accept="standalone"]').isChecked(),true);
  assert.equal(await page.locator('[data-accept="offline"]').isChecked(),true);
@@ -83,7 +94,7 @@ try{
  await page.locator('[data-view="trips"]').last().click();
  await page.getByText('Disposable Safari QA trip').first().waitFor();
  assert.equal(faults.length,0,'Unexpected WebKit JavaScript errors: '+faults.join('; '));
- console.log('RC1_PREVIEW_WEBKIT_PASS: isolated preview, mobile widths, active cache, offline QA page, checklist reset, saved synthetic trip.');
+ console.log('RC1_PREVIEW_WEBKIT_PASS: isolated preview, mobile widths, real cache bytes, online QA reload, checklist reset, saved synthetic trip. WEBKIT_OFFLINE_COLD_START_NOT_VERIFIED (runner internal error; physical iPhone gate retained).');
 }catch(error){
  await context.setOffline(false).catch(()=>{});
  await page.screenshot({path:'travelit-preview-webkit-failure.png',fullPage:true}).catch(()=>{});
