@@ -18,3 +18,14 @@ jobs:
           for file in js/*.js sw.js; do node --check "$file"; done
       - name: Validate consumer flows and legacy backup
         run: node --test tests/*.test.mjs
+      - name: Build isolated-origin RC1 acceptance package (not deployed)
+        if: startsWith(github.head_ref, 'release/')
+        run: node scripts/build-rc1-preview.mjs
+      - name: Preserve RC1 preview package
+        if: startsWith(github.head_ref, 'release/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: travelit-rc1-isolated-preview
+          path: artifacts/rc1-preview/
+          if-no-files-found: error
+          retention-days: 7

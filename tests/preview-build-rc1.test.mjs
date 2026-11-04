@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync,mkdtempSync,rmSync,existsSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {buildRc1Preview} from '../scripts/build-rc1-preview.mjs';
+const root=fileURLToPath(new URL('../',import.meta.url));
+test('RC1 preview package is visibly distinct and cannot open the production IndexedDB',()=>{
+ const temp=mkdtempSync(join(tmpdir(),'travelit-rc1-preview-'));
+ try{
+  const result=buildRc1Preview({rootDir:root,outputDir:join(temp,'preview')});
+  const read=p=>readFileSync(join(result.outputDir,p),'utf8');
+  const db=read('js/db.js'),sourceDb=readFileSync(join(root,'js/db.js'),'utf8');
+  assert.match(db,/const NAME='travelit-rc1-preview'/);
+  assert.doesNotMatch(db,/const NAME='travelit-foundation'/);
+  assert.match(sourceDb,/const NAME='travelit-foundation'/);
+  const channel=read('js/workspace-coordination.js');
+  assert.match(channel,/travelit-rc1-preview-workspace-changes-v1/);
+  assert.doesNotMatch(channel,/travelit-workspace-changes-v1(?!')/);
+  const sw=read('sw.js'),offline=read('js/offline-shell.js');
+  assert.match(sw,/key.startsWith\('travelit-rc1-preview-shell-'\)/);
+  assert.doesNotMatch(sw,/key.startsWith\('travelit-foundation-shell-'\)/);
+  const header=/const CACHE='([^']+)';const SHELL=(\[[^\n]*\]);/.exec(sw);
+  assert.ok(header);
+  assert.equal(header[1],result.cache);
+  const assets=JSON.parse(header[2]);
+  assert.ok(assets.includes('./js/preview-bootstrap.js'));
+  assert.match(offline,/travelit-rc1-preview-shell-/);
+  assert.match(offline,/\.\/js\/preview-bootstrap\.js/);
+  const html=read('index.html'),bootstrap=read('js/preview-bootstrap.js');
+  assert.match(html,/preview-flag/);
+  assert.match(html,/js\/preview-bootstrap\.js/);
+  assert.doesNotMatch(html,/<script type="module" src="js\/app\.js/);
+  assert.match(bootstrap,/location\.hostname\.toLowerCase\(\)==='kdg-007\.github\.io'/);
+  assert.match(bootstrap,/else\{await import\('\.\/app\.js\?v=/);
+  assert.match(JSON.parse(read('manifest.webmanifest')).short_name,/Test/);
+  assert.ok(existsSync(join(result.outputDir,'icons/icon.svg')));
+  assert.ok(existsSync(join(result.outputDir,'PREVIEW_README.md')));
+ }finally{rmSync(temp,{force:true,recursive:true});}
+});
