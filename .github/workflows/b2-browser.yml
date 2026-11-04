@@ -5,15 +5,8 @@ on:
       - 'js/**'
       - 'css/**'
       - 'index.html'
-      - 'tests/editorial-b2.browser.mjs'
-      - 'tests/consumer-b3.browser.mjs'
-      - 'tests/planning-b4.browser.mjs'
-      - 'tests/map-m1.browser.mjs'
-      - 'tests/notes-timeline.browser.mjs'
-      - 'tests/dependencies-d1.browser.mjs'
-      - 'tests/packing-tree-p1.browser.mjs'
-      - 'tests/gallery-g1.browser.mjs'
-      - 'tests/media-preview-v1.browser.mjs'
+      - 'tests/*.browser.mjs'
+      - 'sw.js'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -29,14 +22,18 @@ jobs:
         run: |
           npm install --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
-      - name: Run browser acceptance test
+      - name: Run all browser acceptance suites (automatically discovered)
+        shell: bash
         run: |
-          node tests/editorial-b2.browser.mjs
-          node tests/consumer-b3.browser.mjs
-          node tests/planning-b4.browser.mjs
-          node tests/map-m1.browser.mjs
-          node tests/notes-timeline.browser.mjs
-          node tests/dependencies-d1.browser.mjs
-          node tests/packing-tree-p1.browser.mjs
-          node tests/gallery-g1.browser.mjs
-          node tests/media-preview-v1.browser.mjs
+          set -euo pipefail
+          suites=(tests/*.browser.mjs)
+          if [[ ! -f "${suites[0]}" ]]; then
+            echo "::error::No browser acceptance tests found"
+            exit 1
+          fi
+          echo "Running ${#suites[@]} browser acceptance suites"
+          for suite in "${suites[@]}"; do
+            echo "::group::${suite}"
+            node "${suite}"
+            echo "::endgroup::"
+          done
