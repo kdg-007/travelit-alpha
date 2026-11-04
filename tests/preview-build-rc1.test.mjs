@@ -32,7 +32,10 @@ test('RC1 preview package is visibly distinct and cannot open the production Ind
   assert.match(html,/preview-flag/);
   assert.match(html,/js\/preview-bootstrap\.js/);
   assert.doesNotMatch(html,/<script type="module" src="js\/app\.js/);
-  assert.match(bootstrap,/location\.hostname\.toLowerCase\(\)==='kdg-007\.github\.io'/);
+  assert.match(bootstrap,/const host=location\.hostname\.toLowerCase\(\)/);
+  assert.match(bootstrap,/const unsafe=host==='kdg-007\.github\.io'/);
+  assert.match(bootstrap,/location\.protocol!=='https:'&&!local/);
+  assert.ok(existsSync(join(result.outputDir,'PREVIEW_INTEGRITY.json')));
   assert.match(bootstrap,/else\{await import\('\.\/app\.js\?v=/);
   assert.match(JSON.parse(read('manifest.webmanifest')).short_name,/Test/);
   assert.ok(existsSync(join(result.outputDir,'icons/icon.svg')));
