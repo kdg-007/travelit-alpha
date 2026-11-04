@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:net';
+import {createServer as createHttpServer} from 'node:http';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -35,9 +36,12 @@ test('Codespaces attach starts disposable server once, then reuses it without ta
 });
 test('Codespaces attach never replaces another application on the expected port',async()=>{
  const port=await freePort();
- const other=createServer(socket=>socket.end('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nother'));
+ const other=createHttpServer((req,res)=>{res.writeHead(200,{'Connection':'close'});res.end('other');});
  await new Promise(resolve=>other.listen(port,'127.0.0.1',resolve));
  try{
   await assert.rejects(()=>ensureRc1Preview({port}),/owned by another service/);
- }finally{await new Promise(resolve=>other.close(resolve));}
+ }finally{
+  other.closeAllConnections();
+  await new Promise(resolve=>other.close(resolve));
+ }
 });
