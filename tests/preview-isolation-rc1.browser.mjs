@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,existsSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -16,6 +16,7 @@ const server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.
 const browser=await chromium.launch({headless:true});
 const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
 const page=await context.newPage(),faults=[];
+let blockedContext=null;
 page.on('pageerror',e=>faults.push(e.message));
 async function ready(){for(let i=0;i<55;i++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,250));}throw Error('Isolated preview test server unavailable.');}
 try{
@@ -54,9 +55,31 @@ try{
  await page.locator('[data-view="trips"]:visible').first().click();
  await page.getByText('Synthetic preview journey').first().waitFor();
  assert.equal(faults.length,0,'Page errors: '+faults.join('; '));
+ // This is a brand-new isolated browser context. Intercept every GitHub Pages
+ // request with the preview files, without reaching the real production site.
+ blockedContext=await browser.newContext({viewport:{width:390,height:844}});
+ await blockedContext.route('https://kdg-007.github.io/**',async route=>{
+  const url=new URL(route.request().url());
+  const relative=url.pathname.replace(/^\/rc1-preview\/?/,'')||'index.html';
+  const file=join(result.outputDir,relative);
+  if(!existsSync(file)){await route.fulfill({status:404,body:'Not found'});return;}
+  const mime=relative.endsWith('.js')?'text/javascript':
+   relative.endsWith('.css')?'text/css':
+   relative.endsWith('.webmanifest')?'application/manifest+json':
+   relative.endsWith('.svg')?'image/svg+xml':'text/html';
+  await route.fulfill({status:200,contentType:mime,body:readFileSync(file)});
+ });
+ const blocked=await blockedContext.newPage();
+ await blocked.goto('https://kdg-007.github.io/rc1-preview/',{waitUntil:'domcontentloaded'});
+ await blocked.locator('#main').getByText('This RC1 preview will not run on the existing GitHub Pages origin').waitFor();
+ assert.equal(await blocked.locator('[data-view="trips"]:visible').count(),0,'Blocked preview must not start app');
+ const blockedStores=await blocked.evaluate(async()=>({dbs:await indexedDB.databases(),caches:await caches.keys()}));
+ assert.equal(blockedStores.dbs.length,0,'Blocked preview must never open a database');
+ assert.equal(blockedStores.caches.length,0,'Blocked preview must never install a cache');
  console.log('RC1_PREVIEW_BROWSER_PASS: test watermark, separate DB/topic/cache, controlled offline shell, offline reopen');
 }finally{
  await context.setOffline(false).catch(()=>{});
+ if(blockedContext)await blockedContext.close();
  await context.close();await browser.close();server.kill();
  rmSync(temp,{recursive:true,force:true});
 }
