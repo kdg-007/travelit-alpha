@@ -23,6 +23,10 @@ TravelIt is a local-first, family travel planning progressive web app. This is t
 - Verified JSON import is limited to 64 MiB; oversize backups need special handling
 - Real iPhone standalone-PWA safe-area and OS-specific behaviors remain release gates
 
+## KeepIt platform alignment (November 4, 2026)
+
+TravelIt keeps its operational data and local Markdown capture notes independently usable. The KeepIt v1 platform transport is provider-owned, same-origin and in-process; it is not an available cross-origin service or public SDK. The current TravelIt build has **no approved KeepIt host**, so native note creation, document preview, and cloud sync remain disabled. The provider's native-note reference and the generic typed Platform v1 reference are distinct; `js/keepit-platform-compat.js` enforces a structural correspondence check without inventing authorization. KeepIt's current full backup does not yet prove historical native-note revisions survive restore. See `docs/TRAVELIT_KEEPIT_RC1_ALIGNMENT_2026-11-04.md` for ownership, interoperability and release gates.
+
 ## Automated verification
 GitHub Actions runs syntax checks and Node unit tests, auto-discovers all `tests/*.browser.mjs` Chromium mobile journeys, and checks a targeted WebKit mobile-browser smoke test on release PRs. Unit tests and browser emulation **cannot** replace a real iPhone standalone-PWA acceptance check.
 
