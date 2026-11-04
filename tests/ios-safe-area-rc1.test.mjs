@@ -10,7 +10,8 @@ test('standalone iPhone status-bar paint uses the real OS inset and does not cov
   assert.match(css,/@media\(max-width:720px\) and \(display-mode:standalone\)\{\s*\.topbar\{padding-top:calc\(9px \+ env\(safe-area-inset-top,0px\)\)/);
 });
 test('safe-area CSS gets a fresh cache-key when installed PWA updates',()=>{
-  const asset='css/style.css?v=rc1-20261104-tripnav';
+  const asset=/href="(css\/style\.css\?v=[a-z0-9-]+)"/.exec(html)?.[1];
+  assert.ok(asset,'Stylesheet must have an explicit versioned URL');
   assert.ok(html.includes(asset));
   assert.ok(worker.includes('./'+asset));
 });

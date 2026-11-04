@@ -959,4 +959,45 @@ async function init(){try{state.db=await openDatabase(warnVersionChange);await r
     const params=new URLSearchParams(location.search),sourceText=params.get('text')||'',sourceUrl=params.get('url')||(sourceText.match(/https?:\/\/\S+/)?.[0]||'');if(sourceUrl||params.get('title')){placeEditor(null,{url:sourceUrl,title:params.get('title')||'',notes:sourceText.replace(sourceUrl,'').trim()});}
     if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>checkOfflineShell().catch(()=>{})).catch(()=>toast('Offline shell could not be installed; local records still work.',true));}
   }catch(err){$('#main').innerHTML=`<div class="alert red"><strong>TravelIt could not open local storage.</strong><p>${esc(err.message)}</p><p>Do not clear browser data before recovering any existing content.</p></div>`;console.error(err);}}
+
+/* RC2 visual shell: per-browser preferences only. No changes to trip IndexedDB. */
+function installTravelItWorkspaceChrome(){
+ const KEY='travelit_ui_preferences_v1',shell=document.getElementById('app');
+ const sidebar=document.getElementById('sidebar-toggle'),theme=document.getElementById('theme-toggle');
+ const scrim=document.getElementById('sidebar-scrim');
+ let prefs={theme:document.documentElement.dataset.theme==='light'?'light':'dark',sidebar:'expanded'},drawer=false;
+ try{
+   const value=JSON.parse(localStorage.getItem(KEY)||'null');
+   if(value&&typeof value==='object'&&!Array.isArray(value)){
+     if(['light','dark'].includes(value.theme))prefs.theme=value.theme;
+     if(['expanded','compact','hidden'].includes(value.sidebar))prefs.sidebar=value.sidebar;
+   }
+ }catch{}
+ const mobile=()=>window.matchMedia('(max-width:720px)').matches;
+ const paint=()=>{
+   document.documentElement.dataset.theme=prefs.theme;
+   document.documentElement.style.colorScheme=prefs.theme;
+   shell.dataset.sidebar=mobile()?(drawer?'drawer':prefs.sidebar):prefs.sidebar;
+   sidebar.setAttribute('aria-expanded',String(mobile()?drawer:prefs.sidebar!=='hidden'));
+   sidebar.setAttribute('aria-label',mobile()?(drawer?'Close navigation':'Open navigation'):'Navigation: '+prefs.sidebar+'. Change width');
+   theme.setAttribute('aria-label','Switch to '+(prefs.theme==='dark'?'light':'dark')+' appearance');
+   theme.textContent=prefs.theme==='dark'?'☼':'☾';
+   document.querySelector('meta[name="theme-color"]')?.setAttribute('content',prefs.theme==='dark'?'#142331':'#133148');
+ };
+ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(prefs));}catch{}};
+ const closeDrawer=()=>{if(drawer){drawer=false;paint();}};
+ sidebar.addEventListener('click',()=>{
+   if(mobile())drawer=!drawer;
+   else {prefs.sidebar=prefs.sidebar==='expanded'?'compact':prefs.sidebar==='compact'?'hidden':'expanded';save();}
+   paint();
+ });
+ theme.addEventListener('click',()=>{prefs.theme=prefs.theme==='dark'?'light':'dark';save();paint();});
+ scrim.addEventListener('click',closeDrawer);
+ document.getElementById('side-nav').addEventListener('click',e=>{if(e.target.closest('[data-view]'))closeDrawer();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+ window.addEventListener('resize',()=>{if(!mobile())drawer=false;paint();});
+ paint();
+}
+installTravelItWorkspaceChrome();
+
 init();

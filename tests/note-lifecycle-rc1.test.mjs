@@ -20,7 +20,8 @@ test('a late note autosave cannot reach a newly opened modal or reset its dirty 
 test('note editor app JS is cache-busted as part of this PWA release',()=>{
  const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
  const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
- const asset='js/app.js?v=rc1-20261104-tripnav';
+ const asset=/src="(js\/app\.js\?v=[a-z0-9-]+)"/.exec(html)?.[1];
+  assert.ok(asset,'App script must have an explicit versioned URL');
  assert.ok(html.includes(asset));
  assert.ok(sw.includes('./'+asset));
 });
