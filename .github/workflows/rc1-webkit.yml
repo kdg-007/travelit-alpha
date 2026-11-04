@@ -8,6 +8,10 @@ on:
       - 'index.html'
       - 'sw.js'
       - 'tests/webkit-rc1.mjs'
+      - 'tests/preview-webkit-rc1.mjs'
+      - 'scripts/build-rc1-preview.mjs'
+      - 'scripts/preview-qa.html'
+      - 'scripts/preview-readiness.js'
       - '.github/workflows/rc1-webkit.yml'
 jobs:
   safari-engine:
@@ -28,11 +32,15 @@ jobs:
           npx playwright install --with-deps webkit
       - name: Run mobile WebKit smoke
         run: node tests/webkit-rc1.mjs
+      - name: Validate isolated RC1 preview in Safari engine
+        run: node tests/preview-webkit-rc1.mjs
       - name: Retain screenshot only if WebKit smoke fails
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: travelit-webkit-failure
-          path: travelit-webkit-failure.png
+          path: |
+            travelit-webkit-failure.png
+            travelit-preview-webkit-failure.png
           if-no-files-found: ignore
           retention-days: 3
