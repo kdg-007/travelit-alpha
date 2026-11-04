@@ -496,3 +496,14 @@
 @media(max-width:720px) and (display-mode:standalone){
  .topbar{padding-top:calc(9px + env(safe-area-inset-top,0px))}
 }
+
+/* RC1 mobile timeline clarity; keep transient save confirmations above tabs. */
+.timeline-tick:first-child{transform:translateX(0)}
+.timeline-tick:last-child{transform:translateX(-100%)}
+.timeline-pan-hint{display:none}
+@media(max-width:720px){
+ .timeline-pan-hint{display:block;margin:0 0 8px;font-size:11px;color:var(--muted)}
+ .travel-timeline-scroll{-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+ .timeline-empty{padding:28px 14px;line-height:1.5}
+ .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px));left:12px;right:12px;max-width:none;padding:10px 13px;font-size:13px}
+}

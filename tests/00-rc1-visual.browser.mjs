@@ -49,6 +49,21 @@ try{
   await page.locator('#modal-backdrop').waitFor({state:'hidden',timeout:15000});
   await page.locator('.trip-workspace').waitFor();
   await screen(page,preset,'trip-itinerary');
+  assert.equal(await page.locator('.timeline-axis').count(),0,'Empty days should not display a cropped time ruler');
+  for(const [title,time] of [['Early breakfast','07:00'],['Evening arrival','20:00']]){
+   await page.locator('[data-action="add-stop"]:visible').first().click();
+   await page.locator('#f-title').fill(title);
+   await page.locator('#f-time').fill(time);
+   await page.locator('#f-durationMinutes').fill('45');
+   await page.locator('#modal-form button[type=submit]').click();
+   await page.locator('#modal-backdrop').waitFor({state:'hidden',timeout:15000});
+  }
+  await page.locator('.timeline-bar').first().waitFor();
+  const ticks=await page.locator('.timeline-tick').evaluateAll(nodes=>nodes.map(n=>{
+   const r=n.getBoundingClientRect();return {left:r.left,right:r.right,label:n.textContent};
+  }));
+  for(let i=1;i<ticks.length;i++)assert.ok(ticks[i].left>=ticks[i-1].right-1,preset+': overlap '+JSON.stringify(ticks));
+  await screen(page,preset,'trip-timeline-populated');
   await page.locator('[data-trip-tab="packing"]:visible').first().click();
   await screen(page,preset,'trip-packing');
   assert.equal(errors.length,0,preset+': '+errors.join('; '));

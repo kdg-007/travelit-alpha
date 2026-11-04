@@ -537,9 +537,20 @@ async function saveItineraryGrid(){
  await writeLocally(()=>guardedSaveRecords(state.db,'stop',list,{expectedEpoch:state.workspaceEpoch,expectedRevisionByKey:revisions,expectedPresenceByKey:presence}));
 }
 function renderTripTimeline(entries,day){
- const layout=timelineForDay(entries,day),ticks=[];
- for(let m=Math.ceil(layout.begin/60)*60;m<=layout.finish;m+=60){
-  ticks.push('<span class="timeline-tick" style="left:'+((m-layout.begin)/layout.span*100).toFixed(3)+'%">'+esc(formatClock(Math.min(m,1439)))+'</span>');
+ const layout=timelineForDay(entries,day);
+ const intro='<div class="travel-timeline-intro"><strong>Day schedule</strong><span class="tiny muted">Drag flexible activities or adjust by 15 minutes</span></div>';
+ const untimed=layout.untimed.length?'<div class="timeline-unscheduled"><strong>Flexible</strong>'+layout.untimed.map(e=>action(e.title,'timeline-open:'+e.id,'button button-small')).join('')+'</div>':'';
+ if(!layout.events.length){
+  return '<section class="travel-timeline" id="travel-gantt">'+intro
+   +'<div class="timeline-empty">No timed activities yet. Add an activity to begin your day schedule.</div>'
+   +untimed+'</section>';
+ }
+ const ticks=[];
+ // Fewer labels on long time ranges keep text legible within the scrollable track.
+ const tickStep=layout.span>1080?240:layout.span>480?120:60;
+ for(let m=Math.ceil(layout.begin/tickStep)*tickStep;m<=layout.finish;m+=tickStep){
+  const label=m===1440?'24:00':formatClock(m);
+  ticks.push('<span class="timeline-tick" style="left:'+((m-layout.begin)/layout.span*100).toFixed(3)+'%">'+esc(label)+'</span>');
  }
  const rows=layout.events.map(event=>{
   const pos=timelinePosition(event,layout);
@@ -550,11 +561,10 @@ function renderTripTimeline(entries,day){
   +' title="'+esc(event.title+' · '+event.time)+'" aria-label="Edit '+esc(event.title)+'">'+(event.fixed?'🔒 ':'')+esc(event.title)+'</button></div>'
   +'<div class="timeline-steps">'+(event.fixed?'':action('−15','timeline-shift:-15:'+event.id,'button button-small')+action('+15','timeline-shift:15:'+event.id,'button button-small'))+'</div></div>';
  }).join('');
- return '<section class="travel-timeline" id="travel-gantt"><div class="travel-timeline-intro"><strong>Day schedule</strong><span class="tiny muted">Drag flexible activities or adjust by 15 minutes</span></div>'
+ return '<section class="travel-timeline" id="travel-gantt">'+intro
+  +'<div class="timeline-pan-hint">Swipe sideways for later hours</div>'
   +'<div class="travel-timeline-scroll"><div class="travel-timeline-sheet"><div class="timeline-header"><span>Activities</span><div class="timeline-axis">'+ticks.join('')+'</div><span></span></div>'
-  +(rows||'<div class="timeline-empty">Set an activity time to show it on the timeline.</div>')
-  +(layout.untimed.length?'<div class="timeline-unscheduled"><strong>Flexible</strong>'+layout.untimed.map(e=>action(e.title,'timeline-open:'+e.id,'button button-small')).join('')+'</div>':'')
-  +'</div></div></section>';
+  +rows+untimed+'</div></div></section>';
 }
 function bindTripTimeline(){
  const el=$('#travel-gantt');if(!el)return;
