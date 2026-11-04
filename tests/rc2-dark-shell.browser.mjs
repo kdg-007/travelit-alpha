@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+import {spawn} from 'node:child_process';
+const port=8773,base='http://127.0.0.1:'+port+'/';
+const server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1'],{stdio:'ignore'});
+const browser=await chromium.launch({headless:true});
+let contexts=[];
+try{
+ let ready=false;
+ for(let i=0;i<45;i++){try{if((await fetch(base)).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,250));}
+ assert.ok(ready,'TravelIt local QA HTTP server reachable');
+ const desktop=await browser.newContext({viewport:{width:1280,height:800}});contexts.push(desktop);
+ const p=await desktop.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.goto(base,{waitUntil:'domcontentloaded'});
+ await p.locator('#side-nav .navitem').first().waitFor();
+ assert.equal(await p.locator('html').getAttribute('data-theme'),'dark');
+ assert.equal(await p.locator('#app').getAttribute('data-sidebar'),'expanded');
+ await p.locator('#sidebar-toggle').click();
+ assert.equal(await p.locator('#app').getAttribute('data-sidebar'),'compact');
+ await p.locator('#sidebar-toggle').click();
+ assert.equal(await p.locator('#app').getAttribute('data-sidebar'),'hidden');
+ assert.equal(await p.locator('.sidebar').isVisible(),false);
+ const full=await p.locator('.app-main').evaluate(el=>Math.round(el.getBoundingClientRect().width));
+ assert.ok(full>=1270,'Hidden sidebar must return width to workspace');
+ await p.locator('#theme-toggle').click();
+ assert.equal(await p.locator('html').getAttribute('data-theme'),'light');
+ await p.reload({waitUntil:'domcontentloaded'});
+ assert.equal(await p.locator('html').getAttribute('data-theme'),'light');
+ assert.equal(await p.locator('#app').getAttribute('data-sidebar'),'hidden');
+ const saved=await p.evaluate(()=>JSON.parse(localStorage.getItem('travelit_ui_preferences_v1')));
+ assert.deepEqual(saved,{theme:'light',sidebar:'hidden'});
+ const phone=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});contexts.push(phone);
+ const m=await phone.newPage(),mErrors=[];m.on('pageerror',e=>mErrors.push(e.message));
+ await m.goto(base,{waitUntil:'domcontentloaded'});await m.locator('#mobile-nav .navitem').first().waitFor();
+ assert.equal(await m.locator('html').getAttribute('data-theme'),'dark');
+ await m.locator('#sidebar-toggle').tap();
+ assert.equal(await m.locator('#app').getAttribute('data-sidebar'),'drawer');
+ assert.equal(await m.locator('#sidebar').isVisible(),true);
+ assert.equal(await m.locator('#main').isVisible(),true);
+ await m.locator('#sidebar-scrim').tap({position:{x:365,y:180}});
+ assert.notEqual(await m.locator('#app').getAttribute('data-sidebar'),'drawer');
+ assert.equal(await m.locator('#sidebar').isVisible(),false);
+ assert.deepEqual(errors,[],'No desktop JS errors');
+ assert.deepEqual(mErrors,[],'No mobile JS errors');
+ console.log('PASS: RC2 dark-first, user theme, sidebar 3 states, saved layout and dismissible phone drawer');
+}finally{for(const c of contexts)await c.close();await browser.close();server.kill('SIGTERM');}
