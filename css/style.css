@@ -473,3 +473,20 @@
  .today-moments-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .editorial-today-empty{min-height:250px}
 }
+
+/* V1: saved-link cards. Actual JPEG covers override optional online previews. */
+.media-cover-frame{position:relative;display:block;width:100%;height:100%;min-height:100%;overflow:hidden;background:linear-gradient(135deg,#234b61 0%,#35776f 56%,#aecbc2 100%)}
+.media-cover-frame>img{position:absolute;z-index:1;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.media-cover-frame>img.media-preview-unavailable{display:none!important}
+.media-cover-frame .cover-category{position:absolute;z-index:0;left:14px;bottom:17px;right:12px;line-height:1.15;color:#fdfdf9;font-family:inherit;font-size:clamp(16px,2.1vw,27px);text-align:left;text-shadow:0 1px 5px #183e4760}
+.media-cover-frame .cover-mark{position:absolute;right:14px;top:14px;font-size:29px;color:#fff;opacity:.8;z-index:0}
+.media-cover-frame .media-kind-pill{position:absolute;z-index:2;left:11px;top:11px;font-size:11px;line-height:1;font-weight:750;letter-spacing:.2px;padding:7px 9px;border-radius:20px;background:rgba(14,39,52,.85);color:white}
+.story-cover-wrap{position:relative;min-width:0;isolation:isolate}
+.story-cover-wrap .story-cover{display:block;width:100%;height:192px}
+.story-cover-upload{position:absolute;z-index:3;right:9px;bottom:9px;background:rgba(17,49,64,.92);color:#fff;border:1px solid #ffffff88;border-radius:18px;padding:7px 11px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;font-weight:750;box-shadow:0 2px 9px #11343c50}
+.story-cover-upload:focus-within{outline:3px solid #8fd6c7;outline-offset:2px}
+.story-cover-upload>input{position:absolute;left:50%;top:50%;width:1px;height:1px;clip-path:inset(50%);overflow:hidden;opacity:0}
+.story-cover-wrap .story-cover:hover+.story-cover-upload,.story-cover-upload:hover{background:#123d56}
+.media-preview-help:empty{display:none}
+.media-preview-help{color:var(--muted);font-size:12px;margin-top:-8px}
+@media(max-width:600px){.editorial-story-card .story-cover-wrap .story-cover{height:145px}.story-cover-upload{font-size:11px;padding:6px 9px;min-height:33px;right:6px;bottom:6px}.media-cover-frame .cover-category{font-size:17px}}

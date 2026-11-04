@@ -15,6 +15,10 @@ page.on('pageerror',e=>errors.push(e.message));
 try{
  await waitForServer();
  await page.goto(url,{waitUntil:'networkidle'});
+ await page.waitForTimeout(300);
+ if(await page.locator('[data-view="trips"]').count()===0){
+  throw Error('TravelIt failed bootstrap: '+JSON.stringify(errors)+' / '+String(await page.locator('#main').textContent()).slice(0,400));
+ }
  await page.locator('[data-view="trips"]').last().click();
  await page.locator('[data-action="new-trip"]').first().click();
  await page.locator('#f-title').fill('Synthetic B2 Trip');
