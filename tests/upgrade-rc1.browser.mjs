@@ -22,10 +22,22 @@ const context=await browser.newContext({viewport:{width:390,height:844},isMobile
 const page=await context.newPage(),errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 async function ready(){for(let i=0;i<50;i++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,250));}throw Error('Upgrade fixture HTTP server unavailable');}
+async function pollPage(predicate,arg,timeout=45000){
+ const start=Date.now();
+ while(Date.now()-start<timeout){
+  if(await page.evaluate(predicate,arg))return;
+  await new Promise(resolve=>setTimeout(resolve,200));
+ }
+ throw Error('Timed out waiting for completed worker transition, not merely cache creation.');
+}
 async function serviceWorkerReady(name){
- await page.waitForFunction(async cacheName=>{
-  try{return Boolean(navigator.serviceWorker.controller)&&(await caches.keys()).includes(cacheName);}catch{return false;}
- },name,{timeout:35000});
+ await pollPage(async cacheName=>{
+  try{
+   const keys=await caches.keys(),registration=await navigator.serviceWorker.getRegistration();
+   return keys.includes(cacheName)&&registration?.active?.state==='activated'&&
+    navigator.serviceWorker.controller===registration.active;
+  }catch{return false;}
+ },name);
 }
 try{
  await ready();
@@ -59,7 +71,7 @@ try{
   cpSync(resolve(path),join(staging,path),{force:true});
  }
  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.getRegistration();if(!reg)throw Error('Missing installed baseline worker');await reg.update();});
- await page.waitForFunction(async({cacheName,oldCache})=>{
+ await pollPage(async({cacheName,oldCache})=>{
   try{
    const registration=await navigator.serviceWorker.getRegistration();
    const names=await caches.keys();
@@ -72,7 +84,7 @@ try{
    ]);
    return Boolean(entryPoint?.ok&&backupModule?.ok);
   }catch{return false;}
- },{cacheName:newName,oldCache:oldName},{timeout:45000});
+ },{cacheName:newName,oldCache:oldName});
  // Precaching must fetch CURRENT bytes even if the HTTP cache has stale B4 modules.
  const moduleCheck=await page.evaluate(async cacheName=>{
   const cache=await caches.open(cacheName);
