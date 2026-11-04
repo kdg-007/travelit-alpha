@@ -59,8 +59,28 @@ try{
   cpSync(resolve(path),join(staging,path),{force:true});
  }
  await page.evaluate(async()=>{const reg=await navigator.serviceWorker.getRegistration();if(!reg)throw Error('Missing installed baseline worker');await reg.update();});
- await page.waitForFunction(async cacheName=>{try{return (await caches.keys()).includes(cacheName);}catch{return false;}},newName,{timeout:35000});
+ await page.waitForFunction(async cacheName=>{
+  try{
+   const registration=await navigator.serviceWorker.getRegistration();
+   return (await caches.keys()).includes(cacheName)
+     && registration?.active?.state==='activated'
+     && navigator.serviceWorker.controller===registration.active;
+  }catch{return false;}
+ },newName,{timeout:35000});
  await page.reload({waitUntil:'domcontentloaded'});
+ try{
+  await page.locator('[data-view="trips"]').last().waitFor({timeout:12000});
+ }catch(error){
+  const debug=await page.evaluate(async()=>({
+   pageText:document.body?.innerText?.slice(0,1800),
+   script:document.querySelector('script[type="module"]')?.src,
+   caches:await caches.keys(),
+   registration:(await navigator.serviceWorker.getRegistration())?.active?.state,
+   controller:navigator.serviceWorker.controller?.state,
+   databaseNames:typeof indexedDB.databases==='function'?await indexedDB.databases():null
+  })).catch(e=>({debugError:String(e)}));
+  throw Error('Upgrade restart failed: '+JSON.stringify({errors,debug,reason:String(error)}));
+ }
  await page.locator('[data-view="trips"]').last().click();
  await page.getByText('Upgrade Data Preservation QA').first().waitFor({timeout:18000});
  const status=await page.evaluate(async()=>{
