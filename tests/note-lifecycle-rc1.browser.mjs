@@ -27,6 +27,7 @@ try{
  for(let i=0;i<2;i++){
   await page.locator('[data-action^="edit-note:"]').first().click();
   await page.locator('#modal-form button[type=submit]').click();
+  await page.locator('#modal-backdrop').waitFor({state:'hidden',timeout:15000});
  }
  await page.locator('[data-action^="edit-note:"]').first().click();
  const body=page.locator('#f-content');
@@ -35,6 +36,10 @@ try{
  await page.locator('[data-action="note-format:bold"]').first().click();
  assert.equal(await body.inputValue(),'**alpha**','Only one formatting handler should run');
  await page.locator('#modal-form button[type=submit]').click();
+ // Browser click completion is not completion of the asynchronous IndexedDB save.
+ // Wait for the editor to close only after onSubmit has durably resolved.
+ await page.locator('#modal-backdrop').waitFor({state:'hidden',timeout:15000});
+ await page.getByText('Repeat editor note').first().waitFor();
  await page.reload({waitUntil:'domcontentloaded'});
  await page.locator('[data-view="trips"]').last().click();
  await page.locator('[data-trip-tab="info"]').click();
