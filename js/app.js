@@ -6,15 +6,22 @@ import {VEHICLE_TYPES,EXPENSE_CATEGORIES,normalizeVehicle,normalizeExpense,tripC
 import {openDatabase,allData,guardedSaveRecord,guardedSaveRecords,guardedDeleteRecord,getWorkspaceMetadata,restore,recoveryInfo,undoRestore,listMapPacks,putMapPack,deleteMapPack,listAtlasRegions,putAtlasRegion,getAtlasTiles,deleteAtlasRegion,getSetting,setActiveMapPack} from './db.js';
 import {PACKING_TEMPLATES,prepareTemplateImport} from './packing-templates.js';
 import {persistPackingToggle} from './packing-interaction.js';
+import {STARTER_BRANCHES,addPackingBranch,wirePackingTree,collectPackingTree} from './packing-tree.js';
 import {normalizeAnnotation,exactCoordinatesFromLink,assessOfflineTrip,mapBounds} from './map-tools.js';
 import {mapMarkup,mapClickToGeo} from './map-view.js';
+import {normalizeLocalNote,previewNote,linkedNotes} from './local-notes.js';
+import {normalizePhoto,galleryItems} from './photo-stories.js';
+import {mediaLinkInfo,suggestedMediaTitle} from './media-preview.js';
+import {timelineForDay,timelinePosition,shiftTimelineStop,formatClock} from './travel-timeline.js';
+import {dependencyOrder,dependencyConflicts,proposeDependencyReflow} from './trip-dependencies.js';
+import {mountLiveMap,destroyLiveMap,setLiveMapPinMode,focusLiveMap,fitLiveMap,placedMarkers} from './live-map.js';
 import {MAP_LIMITS,inspectFeatureCollection,sha256MapPack,verifyMapPack,portableMapExport,portableMapImport} from './offline-map-pack.js';
 import {FREE_MAP_CATALOG,fetchCatalogRegion,catalogFailureHelp} from './map-catalog.js';
 import {inspectOsmStreetPack,OSM_IMPORT_LIMITS} from './osm-street-import.js';
 import {ATLAS_LIMITS,prepareRegionAtlas,visibleTileDescriptors,estimateVisibleFeatureCount,verifyAtlasTile,verifyRegionManifest} from './region-atlas.js';
 import {SELF_SERVICE_LIMITS,buildAtlasFromRoadGeoJSON,inspectInstalledAtlas} from './atlas-pack-tools.js';
 import {moveViewport,streetReferenceBounds} from './map-navigation.js';
-import {createBackup,verifyBackup} from './backup.js';
+import {createBackup,verifyBackup,MAX_BACKUP_IMPORT_BYTES,assertBackupFileSize} from './backup.js';
 import {restoreImpact} from './restore-impact.js';
 import {makeTripBrief} from './trip-brief.js';
 import {reviewTripPreparation} from './trip-preparation.js';
@@ -26,7 +33,7 @@ const $=s=>document.querySelector(s);
 let modalDirty=false,modalReturnFocus=null,modalBaseRevisions={},modalBasePresence={},modalBaseEpoch=null,modalBaseMapRevision=0,workspaceChannel=null,externalRefreshTimer=null,localOperationDepth=0,versionObsolete=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const navigation=[['explore','Explore','⌖'],['trips','Trips','▤'],['today','Today','◷'],['photos','Photos','▧'],['more','More','⋯']];
-const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',search:'',category:'All',stageFilter:'All',calendarMonth:'',chosenDay:'',toastTimer:null};
+const state={db:null,recovery:null,view:'explore',places:[],trips:[],stops:[],packing:[],vehicles:[],expenses:[],notes:[],photos:[],outbox:[],keepitAssociations:[],annotations:[],mapPacks:[],activePackId:null,mapFaults:[],atlasView:null,atlasLoading:null,atlasRequest:0,atlasAudit:null,mapDraft:null,mapFixedBounds:null,storageState:'Checking storage…',storageHealth:null,localAudit:null,shellCached:false,shellReport:null,selectedTrip:null,tripTab:'itinerary',itineraryDisplay:'timeline',search:'',category:'All',stageFilter:'All',photoFilter:'all',calendarMonth:'',chosenDay:'',toastTimer:null};
 state.recordRevisions={};state.recordPresence={};state.workspaceEpoch=null;state.workspaceRevision=0;state.mapRevision=0;
 const isOnline=()=>navigator.onLine;
 const byTrip=type=>type.filter(v=>v.tripId===state.selectedTrip);
@@ -38,7 +45,7 @@ const dateShort=d=>{if(!d)return '';const [y,m,day]=d.split('-');return `${m}/${
 function colorStatus(){const e=$('#connection-pill');if(!e)return;e.textContent=isOnline()?'On-device only':'Offline · on-device';e.classList.toggle('offline',!isOnline());}
 function toast(msg,error=false){const t=$('#toast');t.textContent=msg;t.className='toast'+(error?' error':'');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>t.classList.add('hidden'),4400);}
 function setNav(view){state.view=view;const url=new URL(location.href);url.searchParams.set('view',view);['title','text','url'].forEach(k=>url.searchParams.delete(k));history.replaceState(null,'',url);render();}
-async function refresh(){const data=await allData(state.db);const info=await getWorkspaceMetadata(state.db);state.recordRevisions=Object.fromEntries(data.records.map(r=>[r.key,r.localRevision??0]));state.recordPresence=Object.fromEntries(data.records.map(r=>[r.key,true]));state.workspaceEpoch=info.epoch;state.workspaceRevision=info.revision;state.mapRevision=info.mapRevision;const of=type=>data.records.filter(r=>r.type===type).map(r=>r.data);state.places=of('place').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));state.trips=of('trip').sort((a,b)=>a.startDate.localeCompare(b.startDate));state.stops=of('stop');state.packing=of('packing');state.vehicles=of('vehicle');state.expenses=of('expense');state.annotations=of('annotation');state.keepitAssociations=of('keepitAssociation');state.outbox=data.outbox;state.recovery=await recoveryInfo(state.db);const packs=await listMapPacks(state.db);state.mapPacks=[];state.mapFaults=[];for(const pack of packs){if(await verifyMapPack(pack))state.mapPacks.push(pack);else state.mapFaults.push(pack.name||'Unnamed corrupt map');}for(const region of await listAtlasRegions(state.db)){if(await verifyRegionManifest(region))state.mapPacks.push(region);else state.mapFaults.push(region.name||'Corrupt regional atlas');}const active=await getSetting(state.db,'active-map-pack-id');state.activePackId=active==='__none__'?null:(state.mapPacks.some(p=>p.id===active)?active:(state.mapPacks[0]?.id||null));if(!selected()&&state.trips.length)state.selectedTrip=state.trips[0].id;}
+async function refresh(){const data=await allData(state.db);const info=await getWorkspaceMetadata(state.db);state.recordRevisions=Object.fromEntries(data.records.map(r=>[r.key,r.localRevision??0]));state.recordPresence=Object.fromEntries(data.records.map(r=>[r.key,true]));state.workspaceEpoch=info.epoch;state.workspaceRevision=info.revision;state.mapRevision=info.mapRevision;const of=type=>data.records.filter(r=>r.type===type).map(r=>r.data);state.places=of('place').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));state.trips=of('trip').sort((a,b)=>a.startDate.localeCompare(b.startDate));state.stops=of('stop');state.packing=of('packing');state.vehicles=of('vehicle');state.expenses=of('expense');state.notes=of('note');state.photos=of('photo');state.annotations=of('annotation');state.keepitAssociations=of('keepitAssociation');state.outbox=data.outbox;state.recovery=await recoveryInfo(state.db);const packs=await listMapPacks(state.db);state.mapPacks=[];state.mapFaults=[];for(const pack of packs){if(await verifyMapPack(pack))state.mapPacks.push(pack);else state.mapFaults.push(pack.name||'Unnamed corrupt map');}for(const region of await listAtlasRegions(state.db)){if(await verifyRegionManifest(region))state.mapPacks.push(region);else state.mapFaults.push(region.name||'Corrupt regional atlas');}const active=await getSetting(state.db,'active-map-pack-id');state.activePackId=active==='__none__'?null:(state.mapPacks.some(p=>p.id===active)?active:(state.mapPacks[0]?.id||null));if(!selected()&&state.trips.length)state.selectedTrip=state.trips[0].id;}
 async function finishMapChange(){await refresh();workspaceChannel?.announce('map-edit');}
 async function commit(type,value){const guard=guardedContext(type,value.id);await writeLocally(()=>guardedSaveRecord(state.db,type,value,guard));}
 /** A failed save must never leave a packing checkbox appearing saved. */
@@ -113,10 +120,38 @@ async function imageCoverFromFile(file){
   throw Error('This image is too detailed for a local cover. Choose a smaller screenshot.');
  }finally{URL.revokeObjectURL(url);}
 }
-function placeCover(p){return p.coverImage?`<img src="${esc(p.coverImage)}" alt="Cover saved for ${esc(p.name)}" loading="lazy">`:`<span class="cover-category">${esc(p.category)}</span><span class="cover-mark" aria-hidden="true">✦</span>`;}
+function placeCover(p){
+ const media=mediaLinkInfo(p.sourceUrl),label=media.kind==='video'?media.label+' video':p.category;
+ const fallback='<span class="cover-category">'+esc(label)+'</span><span class="cover-mark" aria-hidden="true">'+(media.kind==='video'?'▶':'✦')+'</span>';
+ const image=p.coverImage?'<img src="'+esc(p.coverImage)+'" alt="Cover saved for '+esc(p.name)+'" loading="lazy">':
+ media.remoteThumbnail?'<img data-media-remote="1" src="'+esc(media.remoteThumbnail)+'" alt="YouTube preview for '+esc(p.name)+'" loading="lazy" referrerpolicy="no-referrer">':'';
+ return '<span class="media-cover-frame">'+fallback+image+(media.kind==='video'?'<span class="media-kind-pill">Video</span>':'')+'</span>';
+}
+function wireMediaFallbacks(){
+ for(const img of document.querySelectorAll('img[data-media-remote]')){
+  const fail=()=>img.classList.add('media-preview-unavailable');
+  img.addEventListener('error',fail,{once:true});
+  if(img.complete&&img.naturalWidth===0)fail();
+ }
+}
+function quickCoverPicker(p){
+ return '<label class="story-cover-upload" title="'+esc(p.coverImage?'Replace cover':'Add cover')+'">'
+   +(p.coverImage?'Change cover':'Add cover')
+   +'<input type="file" data-place-cover-id="'+esc(p.id)+'" accept="image/jpeg,image/png,image/webp" aria-label="'+esc(p.coverImage?'Replace cover for ':'Add cover for ')+esc(p.name)+'"></label>';
+}
+async function saveQuickPlaceCover(input){
+ const place=placeById(input.dataset.placeCoverId),file=input.files?.[0];
+ if(!place||!file)return;
+ input.disabled=true;
+ try{
+  const image=await imageCoverFromFile(file);
+  await commit('place',normalizePlace({...place,coverImage:image}));
+ }catch(err){toast('Cover was not saved: '+(err.message||String(err)),true);}
+ finally{if(input.isConnected)input.disabled=false;}
+}
 function placeEditor(p=null,share=null){
  const v=p||{},sh=share||{};
- openModal(p?'Edit place':'Save a place',`<div class="form-grid">${field('name','Place name',v.name==='Unidentified place'?'':v.name||sh.title||'')}${selectField('category','Type',PLACE_CATEGORIES,v.category||'Destination')}<div class="field full">${field('sourceUrl','Reel or website link',v.sourceUrl||sh.url||'', 'url')}</div><div class="field full"><label for="place-cover-file">Cover image (optional)</label><input id="place-cover-file" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">Use a screenshot of the reel if its thumbnail is unavailable. The compressed image is saved with the place and included in local backups.</p>${v.coverImage?`<img class="cover-editor-preview" src="${esc(v.coverImage)}" alt="Saved cover">${action('Remove cover','remove-place-cover','button button-small')}`:''}</div>${selectField('stage','Saved as',DISCOVERY_STAGES,v.stage||'Idea')}${textArea('notes','What caught your eye?',v.notes||sh.notes||'')}<details class="field full subtle-details"><summary>Add location pin</summary><div class="form-grid">${field('lat','Latitude',v.lat??'','text','inputmode="decimal"')}${field('lng','Longitude',v.lng??'','text','inputmode="decimal"')}</div><button type="button" id="extract-link-coordinates" class="button button-small">Use coordinates from map link</button></details></div>`,async f=>{
+ openModal(p?'Edit place':'Save a place',`<div class="form-grid">${field('name','Place name',v.name==='Unidentified place'?'':v.name||sh.title||'')}${selectField('category','Type',PLACE_CATEGORIES,v.category||'Destination')}<div class="field full">${field('sourceUrl','Reel or website link',v.sourceUrl||sh.url||'', 'url')}<p class="media-preview-help" id="media-preview-hint" aria-live="polite"></p></div><div class="field full"><label for="place-cover-file">Cover image (optional)</label><input id="place-cover-file" type="file" accept="image/jpeg,image/png,image/webp"><p class="field-help">Choose a screenshot for a reliable offline cover, including Facebook and Instagram reels.</p>${v.coverImage?`<img class="cover-editor-preview" src="${esc(v.coverImage)}" alt="Saved cover">${action('Remove cover','remove-place-cover','button button-small')}`:''}</div>${selectField('stage','Saved as',DISCOVERY_STAGES,v.stage||'Idea')}${textArea('notes','What caught your eye?',v.notes||sh.notes||'')}<details class="field full subtle-details"><summary>Add location pin</summary><div class="form-grid">${field('lat','Latitude',v.lat??'','text','inputmode="decimal"')}${field('lng','Longitude',v.lng??'','text','inputmode="decimal"')}</div><button type="button" id="extract-link-coordinates" class="button button-small">Use coordinates from map link</button></details></div>`,async f=>{
   const file=$('#place-cover-file').files?.[0];const coverImage=file?await imageCoverFromFile(file):(removedCover?'':(v.coverImage||''));
   const place=normalizePlace({...v,...f,coverImage,id:v.id,createdAt:v.createdAt});
   const existing=findDuplicatePlace(state.places,place.sourceUrl,p?.id);
@@ -125,8 +160,114 @@ function placeEditor(p=null,share=null){
  });
  let removedCover=false;
  if(sh.url||sh.title||sh.notes)modalDirty=true;
+  const sourceField=$('#f-sourceUrl'),nameField=$('#f-name');
+ const offerTitle=()=>{
+   const source=sourceField?.value||'';
+   if(nameField&&!nameField.value.trim()&&source.trim()){
+     nameField.value=suggestedMediaTitle(source);
+     if(nameField.value)modalDirty=true;
+   }
+   const media=mediaLinkInfo(source),tip=$('#media-preview-hint');
+   if(tip)tip.textContent=media.kind==='video'&&media.label!=='YouTube'?'Add a screenshot for the video cover.':'';
+ };
+ sourceField?.addEventListener('change',offerTitle);
+ offerTitle();
  $('#extract-link-coordinates').addEventListener('click',()=>{const coords=exactCoordinatesFromLink($('#f-sourceUrl').value);if(!coords)return toast('This link has no embedded coordinates. You can pin it later.',true);$('#f-lat').value=String(coords.lat);$('#f-lng').value=String(coords.lng);modalDirty=true;toast('Pin copied from map link.');});
  $('#modal-body [data-action="remove-place-cover"]')?.addEventListener('click',e=>{e.preventDefault();removedCover=true;modalDirty=true;$('#modal-body .cover-editor-preview')?.remove();e.currentTarget.remove();});
+}
+function noteTargetLabel(note){
+ if(note.targetType==='trip')return tripById(note.targetId)?.title||'Trip note';
+ if(note.targetType==='place')return placeById(note.targetId)?.name||'Place note';
+ if(note.targetType==='stop')return state.stops.find(s=>s.id===note.targetId)?.title||'Activity note';
+ return 'General';
+}
+function noteCards(notes=state.notes){
+ return '<div class="notes-library">'+notes.map(n=>'<article class="note-list-item"><div><span class="tiny muted">'+esc(noteTargetLabel(n))+'</span><strong>'+esc(n.title)+'</strong><span class="note-snippet">'+esc(n.content.slice(0,145).replace(/[#*]/g,''))+'</span></div><div class="action-line">'
+   +action('Edit','edit-note:'+n.id,'button button-small')
+   +action('Remove','delete-note:'+n.id,'button button-small')+'</div></article>').join('')+'</div>';
+}
+/** Notes are saved to existing guarded IndexedDB records, not temporary
+ * localStorage or a pretend KeepIt transport. The note remains local until
+ * the independently tested KeepIt integration exists.
+ */
+async function noteEditor(existing=null,targetType='general',targetId=null){
+ const initial=normalizeLocalNote(existing||{targetType,targetId,title:'',content:''});
+ const markup='<div class="travel-note-editor">'+field('title','Title',initial.title,'text','maxlength="160"')
+  +'<div class="note-edit-tools" role="toolbar" aria-label="Note formatting">'
+  +action('Heading','note-format:heading','button button-small')
+  +action('Bold','note-format:bold','button button-small')
+  +action('List','note-format:list','button button-small')
+  +action('Checklist','note-format:checklist','button button-small')
+  +action('Preview','note-preview','button button-small')+'</div>'
+  +'<label for="f-content" class="tiny muted">Notes</label>'
+  +'<textarea id="f-content" name="content" rows="14" maxlength="100000" placeholder="What did you discover?"></textarea>'
+  +'<div id="note-preview" class="note-preview hidden" aria-live="polite"></div>'
+  +'<div class="note-save-status" id="note-save-status" role="status">Saved on this device when editing begins</div></div>';
+ let timer=null, saving=false, needsSave=false, failed=null, editorForm=null;
+ const store=async()=>{
+  if(saving){needsSave=true;return;}
+  saving=true;
+  do{
+   needsSave=false;
+   const body=editorForm?.querySelector('#f-content'),title=editorForm?.querySelector('#f-title'),status=editorForm?.querySelector('#note-save-status');
+   if(!editorForm?.isConnected || document.querySelector('#modal-form')!==editorForm || !body||!title)break;
+   const obj=normalizeLocalNote({...initial,title:title.value,content:body.value});
+   try{
+    const guard={expectedEpoch:modalBaseEpoch,expectedRevisionByKey:{['note:'+obj.id]:modalBaseRevisions['note:'+obj.id]??0},
+      expectedPresenceByKey:{['note:'+obj.id]:Boolean(modalBasePresence['note:'+obj.id])}};
+    await guardedSaveRecord(state.db,'note',obj,guard);
+    await refresh();
+    // Never rewrite another modal's guard, status, or dirty flag after a slow save.
+    if(editorForm?.isConnected && document.querySelector('#modal-form')===editorForm){
+     modalBaseRevisions['note:'+obj.id]=state.recordRevisions['note:'+obj.id]??0;
+     modalBasePresence['note:'+obj.id]=true;
+     initial.createdAt=obj.createdAt;
+     failed=null;
+     if(status)status.textContent='Saved on this device';
+     modalDirty=false;
+    }
+    workspaceChannel?.announce('edit');
+   }catch(e){failed=e;if(status)status.textContent='Not saved: '+(e.message||String(e));break;}
+  }while(needsSave);
+  saving=false;
+ };
+ const flush=async()=>{
+  if(timer){clearTimeout(timer);timer=null;}
+  if(saving){needsSave=true;while(saving)await new Promise(resolve=>setTimeout(resolve,25));}
+  if(failed)throw failed;
+  await store();
+  if(failed)throw failed;
+ };
+ openModal(existing?'Edit note':'New note',markup,async()=>{await flush();render();},'Done');
+ $('#f-content').value=initial.content;
+ const form=editorForm=$('#modal-form');
+ form.addEventListener('input',()=>{
+  if(timer)clearTimeout(timer);
+  const status=form.querySelector('#note-save-status');if(status)status.textContent='Saving…';
+  timer=setTimeout(()=>void store(),650);
+ });
+ const body=form.querySelector('#f-content');
+ form.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-action]');
+  if(!btn)return;
+  const kind=btn.dataset.action;
+  if(kind==='note-preview'){
+   const pane=$('#note-preview');
+   pane.classList.toggle('hidden');
+   if(!pane.classList.contains('hidden'))pane.innerHTML=previewNote(body.value);
+   return;
+  }
+  if(!kind.startsWith('note-format:'))return;
+  const prefix=kind.slice(12);
+  const begin=body.selectionStart,end=body.selectionEnd,chosen=body.value.slice(begin,end);
+  const insert=prefix==='heading'?'## '+(chosen||'Heading'):
+    prefix==='bold'?'**'+(chosen||'text')+'**':
+    prefix==='checklist'?'- [ ] '+(chosen||'Task'):
+    '- '+(chosen||'Item');
+  body.setRangeText(insert,begin,end,'end');
+  body.dispatchEvent(new Event('input',{bubbles:true}));
+  body.focus();
+ });
 }
 function tripEditor(t=null){
  const v=t||{},today=tripDateAt(new Date());
@@ -147,12 +288,50 @@ function tripVehicleEditor(){
   await commit('trip',normalizeTrip({...trip,vehicleId:f.vehicleId||null,fuelReservePct:f.fuelReservePct,createdAt:trip.createdAt}));
  });
 }
+function assertTripDependencyGraph(candidate){
+ const trip=selected();if(!trip)throw Error('Select a trip.');
+ dependencyOrder(candidate,trip.id);
+}
+function commitTimelineAdjustment(updated){
+ const trip=selected();if(!trip)throw Error('Select a trip.');
+ const next=normalizeStop(updated,trip);
+ const proposed=state.stops.map(s=>s.id===next.id?next:s);
+ assertTripDependencyGraph(proposed);
+ const blocking=dependencyConflicts(proposed,trip).filter(c=>(c.id===next.id||c.parentId===next.id)&&c.kind!=='unscheduled');
+ if(blocking.length)throw Error('This move would break an activity dependency. Review the sequence or use Reflow.');
+ return commit('stop',next);
+}
+function previewScheduleReflow(){
+ const trip=selected();if(!trip)throw Error('Select a trip first.');
+ const planned=proposeDependencyReflow(byTrip(state.stops),trip);
+ if(!planned.changes.length){toast('Linked activities already fit the schedule.');return;}
+ const changes=planned.changes.map(x=>({...x,updated:normalizeStop(x.updated,trip)}));
+ const html='<div class="schedule-preview-intro"><strong>'+changes.length+' activities will move</strong><p>Review before applying. Fixed bookings remain unchanged.</p></div>'
+  +'<div class="reflow-preview-list">'+changes.map(x=>'<div class="reflow-preview-row"><strong>'+esc(x.title)+'</strong>'
+    +'<span>'+esc(x.fromDate+' '+(x.fromTime||'Unscheduled'))+' → '+esc(x.toDate+' '+x.toTime)+'</span></div>').join('')+'</div>';
+ openModal('Review schedule changes',html,async()=>{
+  const current=proposeDependencyReflow(byTrip(state.stops),trip);
+  // Do not allow a second tab or another change to replace a reviewed proposal.
+  if(JSON.stringify(current.changes.map(x=>[x.id,x.toDate,x.toTime]))!==JSON.stringify(changes.map(x=>[x.id,x.toDate,x.toTime])))
+   throw Error('Your itinerary changed. Review schedule adjustments again.');
+  const revisions={},presence={};
+  for(const c of changes){
+   const key='stop:'+c.id;
+   revisions[key]=modalBaseRevisions[key]??0;
+   presence[key]=Boolean(modalBasePresence[key]);
+  }
+  await writeLocally(()=>guardedSaveRecords(state.db,'stop',changes.map(c=>c.updated),
+   {expectedEpoch:modalBaseEpoch,expectedRevisionByKey:revisions,expectedPresenceByKey:presence}));
+ },'Apply changes');
+}
 function stopEditor(s=null){
  const trip=selected();if(!trip)return toast('Create a trip first.',true);
  const v=s||{},date=v.date||state.chosenDay||trip.startDate;
  const options=state.places.map(p=>`<option value="${esc(p.id)}" ${p.id===v.placeId?'selected':''}>${esc(p.name)}</option>`).join('');
- openModal(s?'Edit activity':'Add activity',`<div class="form-grid">${field('title','Activity',v.title||'','text','required maxlength="150"')}${field('time','Start time',v.time||'','time')}${field('date','Day',date,'date',`min="${trip.startDate}" max="${trip.endDate}" required`)}${field('durationMinutes','Duration (min)',v.durationMinutes??0,'number','min="0" max="10080"')}${selectField('kind','Type',STOP_KINDS,v.kind||'Activity')}<div class="field"><label for="f-placeId">Saved place</label><select id="f-placeId" name="placeId"><option value="">Optional</option>${options}</select></div><details class="field full subtle-details"><summary>Booking, travel time & notes</summary><div class="form-grid"><label class="field full"><span><input type="checkbox" name="fixed" value="yes" ${v.fixed?'checked':''}> Fixed booking</span></label>${field('legOrigin','Coming from',v.legOrigin||'')}${field('legDistanceKm','Drive (km)',v.legDistanceKm??'','number','min="0" max="100000" step="0.1"')}${field('legTravelMinutes','Drive (minutes)',v.legTravelMinutes??'','number','min="0" max="100800"')}${field('legTollPhp','Tolls (₱)',v.legTollPhp??'','number','min="0" max="1000000" step="0.01"')}${textArea('notes','Notes',v.notes||'')}</div></details></div>`,async f=>{
+ const previousChoices=byTrip(state.stops).filter(p=>p.id!==v.id).map(p=>`<option value="${esc(p.id)}" ${v.predecessorId===p.id?'selected':''}>${esc(p.title)} · ${esc(p.date)}</option>`).join('');
+ openModal(s?'Edit activity':'Add activity',`<div class="form-grid">${field('title','Activity',v.title||'','text','required maxlength="150"')}${field('time','Start time',v.time||'','time')}${field('date','Day',date,'date',`min="${trip.startDate}" max="${trip.endDate}" required`)}${field('durationMinutes','Duration (min)',v.durationMinutes??0,'number','min="0" max="10080"')}${selectField('kind','Type',STOP_KINDS,v.kind||'Activity')}<div class="field"><label for="f-placeId">Saved place</label><select id="f-placeId" name="placeId"><option value="">Optional</option>${options}</select></div><div class="field"><label for="f-predecessorId">After activity (optional)</label><select id="f-predecessorId" name="predecessorId"><option value="">Independent</option>${previousChoices}</select></div>${field('lagMinutes','Buffer after (minutes)',v.lagMinutes??0,'number','min="0" max="1440" step="1"')}<details class="field full subtle-details"><summary>Booking, travel time & notes</summary><div class="form-grid"><label class="field full"><span><input type="checkbox" name="fixed" value="yes" ${v.fixed?'checked':''}> Fixed booking</span></label>${field('legOrigin','Coming from',v.legOrigin||'')}${field('legDistanceKm','Drive (km)',v.legDistanceKm??'','number','min="0" max="100000" step="0.1"')}${field('legTravelMinutes','Drive (minutes)',v.legTravelMinutes??'','number','min="0" max="100800"')}${field('legTollPhp','Tolls (₱)',v.legTollPhp??'','number','min="0" max="1000000" step="0.01"')}${textArea('notes','Notes',v.notes||'')}</div></details></div>`,async f=>{
    const stop=normalizeStop({...v,...f,id:v.id,createdAt:v.createdAt,fixed:f.fixed==='yes'},trip);
+   assertTripDependencyGraph([...byTrip(state.stops).filter(x=>x.id!==stop.id),stop]);
    await commit('stop',stop);
  });
 }
@@ -175,31 +354,13 @@ function renderVehicles(){return `<div class="card"><div class="row-between wrap
  */
 function packingMindmapEditor(){
  const trip=selected();if(!trip)return toast('Choose a trip first.',true);
- const nodes=[
-  ['Essentials','Documents & essentials'],['Clothing','Clothing & trail gear'],
-  ['Personal care','First aid & toiletries'],['Electronics','Electronics & navigation'],
-  ['Family','Family & child gear'],['Other','Shelter & sleep'],
-  ['Other','Cooking & food'],['Other','Other gear']
- ];
- const markup='<div class="packing-map" aria-label="Packing brainstorm"><div class="packing-map-center"><strong>'+esc(trip.title)+'</strong><span>What should we bring?</span></div><div class="packing-map-nodes">'
-   +nodes.map(([category,title],index)=>'<label class="packing-map-node"><strong>'+esc(title)+'</strong><small>One item per line</small><textarea name="packmap'+index+'" rows="4" maxlength="3000" placeholder="Add ideas…"></textarea></label>').join('')
-   +'</div></div>';
- openModal('Plan your packing',markup,async(_f,form)=>{
-  const existing=new Set(byTrip(state.packing).map(x=>x.label.trim().toLocaleLowerCase('en')));
-  const rows=[];
-  nodes.forEach(([category],index)=>{
-   const value=form.elements.namedItem('packmap'+index)?.value||'';
-   for(const raw of value.split(/\r?\n/)){
-    const label=raw.trim().replace(/^[•*\-\s]+/,'').trim();
-    if(!label)continue;
-    const key=label.toLocaleLowerCase('en');
-    if(existing.has(key))continue;
-    existing.add(key);rows.push({label,category,quantity:1});
-   }
-  });
-  if(!rows.length)throw Error('Add at least one new item.');
-  if(rows.length>60)throw Error('Generate up to 60 items at a time.');
-  const records=rows.map(row=>normalizePacking(row,trip));
+ const markup='<div id="packing-tree" class="packing-map" aria-label="Packing idea tree"><div class="pack-tree-trunk"><strong>'+esc(trip.title)+'</strong><span>Packing ideas</span></div>'
+  +'<div class="pack-tree-stage"><div class="pack-tree-branches" data-pack-tree-branches></div></div><div class="pack-tree-bottom">'
+  +action('+ Group','pack-tree-new-group','button button-small','data-pack-tree-add-branch')+'</div></div>';
+ openModal('Plan your packing',markup,async()=>{
+  const result=collectPackingTree($('#packing-tree'),byTrip(state.packing));
+  if(!result.items.length)throw Error('Add a new packing item to create the checklist.');
+  const records=result.items.map(row=>normalizePacking(row,trip));
   await writeLocally(()=>guardedSaveRecords(state.db,'packing',records,{
    expectedEpoch:modalBaseEpoch,
    expectedRevisionByKey:Object.fromEntries(records.map(x=>['packing:'+x.id,0])),
@@ -207,6 +368,30 @@ function packingMindmapEditor(){
   }));
   state.tripTab='packing';render();
  },'Generate checklist');
+ const tree=$('#packing-tree'),branches=tree.querySelector('[data-pack-tree-branches]');
+ for(const spec of STARTER_BRANCHES){
+  const branch=addPackingBranch(branches,spec.group,spec.category);
+  const saved=byTrip(state.packing).filter(x=>(x.group||'')===spec.group||(!x.group&&x.category===spec.category));
+  if(saved.length){
+   const sample=document.createElement('div');
+   sample.className='pack-tree-existing';sample.textContent=saved.length+' on your list';
+   branch.append(sample);
+  }
+ }
+ const known=new Set(STARTER_BRANCHES.map(x=>x.group));
+ const customGroups=[...new Set(byTrip(state.packing).map(x=>x.group).filter(Boolean))].filter(x=>!known.has(x));
+ for(const name of customGroups){
+  const existing=byTrip(state.packing).filter(x=>x.group===name);
+  const branch=addPackingBranch(branches,name,existing[0]?.category||'Other');
+  const marker=document.createElement('div');
+  marker.className='pack-tree-existing';marker.textContent=existing.length+' on your list';
+  branch.append(marker);
+ }
+ wirePackingTree(tree);
+ tree.addEventListener('click',e=>{
+  if(e.target.closest('button[data-pack-tree-add-branch],button[data-pack-tree-remove-branch],button[data-pack-tree-remove-item],button[data-pack-tree-add-item]'))modalDirty=true;
+ });
+ branches.querySelector('[data-pack-tree-item]')?.focus();
 }
 function packingTemplateEditor(){
  const trip=selected();if(!trip){toast('Create a trip first.',true);return;}
@@ -224,11 +409,20 @@ function renderNav(){const nav=items=>items.map(([v,l,icon])=>`<button class="na
 function renderExplore(){
  const filters=['All',...PLACE_CATEGORIES],statuses=['All',...DISCOVERY_STAGES];
  const counts=discoveryCounts(state.places);
- const match=state.places.filter(p=>(state.category==='All'||p.category===state.category)&&(state.stageFilter==='All'||(p.stage||'Idea')===state.stageFilter)&&[p.name,p.notes,p.sourceUrl].join(' ').toLowerCase().includes(state.search.toLowerCase()));
- return `<div class="library-toolbar"><div><h2>Saved places</h2><span class="count-label">${state.places.length} saved</span></div><div class="action-line">${action('Map','show-map','button button-small')}${action('+ Save','add-place','button button-primary button-small')}</div></div>
- <div class="search-row compact-search"><input class="search-input" id="explore-search" placeholder="Search places and links" aria-label="Search saved discoveries" value="${esc(state.search)}"><select id="category-filter" aria-label="Filter destination category">${selOptions(filters,state.category)}</select></div>
- ${state.places.length?`<div class="inbox-stages compact-stage" role="group" aria-label="Filter idea status">${statuses.map(st=>`<button type="button" class="stage-chip ${state.stageFilter===st?'active':''}" data-stage-filter="${esc(st)}" aria-pressed="${state.stageFilter===st}">${esc(st)} <span>${st==='All'?state.places.length:counts[st]}</span></button>`).join('')}</div>`:''}
- ${match.length?`<div class="story-grid">${match.map(p=>`<article class="story-card"><div class="story-cover">${placeCover(p)}</div><div class="story-meta"><span>${esc(p.category)}</span><span>${esc(p.stage||'Idea')}</span></div><h3>${esc(p.name)}</h3>${p.notes?`<p>${esc(p.notes)}</p>`:''}<div class="story-actions">${action('Details','place:'+p.id,'button button-small')}${action('Add to trip','plan-place:'+p.id,'button button-small')}${p.sourceUrl?link('Open link',p.sourceUrl):''}</div></article>`).join('')}</div>`:`<div class="quiet-empty"><strong>${state.places.length?'No matching places':'No places saved yet'}</strong>${!state.places.length?action('Save a place','add-place','button button-primary button-small'):''}</div>`}`;
+ const match=state.places.filter(p=>(state.category==='All'||state.category===p.category)&&(state.stageFilter==='All'||state.stageFilter===(p.stage||'Idea'))&&[p.name,p.notes,p.sourceUrl].join(' ').toLowerCase().includes(state.search.toLowerCase()));
+ const featured=match.find(p=>p.coverImage)||null;
+ const rest=featured?match.filter(p=>p.id!==featured.id):match;
+ const feature=featured?'<section class="explore-feature"><div class="explore-feature-copy"><span class="eyebrow">'+esc(featured.category)+'</span><h2>'+esc(featured.name)+'</h2>'
+  +(featured.notes?'<p>'+esc(featured.notes)+'</p>':'')+'<div class="action-line">'+action('View place','place:'+featured.id,'button button-primary button-small')+
+  action('Add to trip','plan-place:'+featured.id,'button button-small')+'</div></div><div class="explore-feature-photo">'+placeCover(featured)+'</div></section>':'';
+ return '<div class="editorial-explore"><section class="explore-collection"><div class="library-toolbar"><div><h2>Saved places</h2><span class="count-label">'+state.places.length+' saved</span></div><div class="action-line">'+action('Map','show-map','button button-small')+action('+ Save','add-place','button button-primary button-small')+'</div></div>'
+  +'<div class="search-row compact-search"><input class="search-input" id="explore-search" placeholder="Search places and saved links" aria-label="Search saved discoveries" value="'+esc(state.search)+'"><select id="category-filter" aria-label="Filter destination category">'+selOptions(filters,state.category)+'</select></div>'
+  +(state.places.length?'<div class="inbox-stages compact-stage" role="group" aria-label="Filter idea status">'+statuses.map(st=>'<button type="button" class="stage-chip '+(state.stageFilter===st?'active':'')+'" data-stage-filter="'+esc(st)+'" aria-pressed="'+(state.stageFilter===st)+'">'+esc(st)+' <span>'+(st==='All'?state.places.length:counts[st])+'</span></button>').join('')+'</div>':'')
+  +feature
+  +(rest.length?'<div class="story-grid editorial-story-grid">'+rest.map(p=>'<article class="story-card editorial-story-card"><div class="story-cover-wrap"><button type="button" class="story-cover" data-action="place:'+esc(p.id)+'" aria-label="View '+esc(p.name)+'">'+placeCover(p)+'</button>'+quickCoverPicker(p)+'</div><div class="story-content"><div class="story-meta"><span>'+esc(p.category)+'</span><span>'+esc(p.stage||'Idea')+'</span></div><h3>'+esc(p.name)+'</h3>'
+  +(p.notes?'<p>'+esc(p.notes)+'</p>':'')+'<div class="story-actions">'+action('View','place:'+p.id,'button button-small')+action('+ Trip','plan-place:'+p.id,'button button-small')+(p.sourceUrl?link(mediaLinkInfo(p.sourceUrl).kind==='video'?'Watch':'Original link',p.sourceUrl):'')+'</div></div></article>').join('')+'</div>':
+  !featured?'<div class="editorial-empty"><h3>'+(state.places.length?'No matching places':'No places saved yet')+'</h3>'+(!state.places.length?action('+ Save a place','add-place','button button-primary button-small'):'')+'</div>':'')
+  +'</section></div>';
 }
 function activePack(){return state.mapPacks.find(p=>p.id===state.activePackId)||null;}
 function atlasViewport(pack){return state.mapFixedBounds||streetReferenceBounds(pack.bounds);}
@@ -264,14 +458,31 @@ function renderMap(){
  const audit=state.atlasAudit&&active?.regionAtlas&&state.atlasAudit.packId===active.id?state.atlasAudit:null;
  const atlasStatus=active?.regionAtlas?`<div class="card" style="margin-top:12px"><h3>Offline atlas management</h3><p class="subtext">Complete map data are saved only in this browser until independently exported. Check every installed cell before a trip; verification does not guarantee iPhone storage persistence.</p><div class="action-line">${action('Verify all cells','verify-region-atlas','button button-primary button-small')}${action('Export regional atlas','export-region-atlas','button button-small')}</div>${audit?`<div role="status" class="alert ${audit.status==='valid'?'blue':'red'}" style="margin-top:9px">${audit.status==='checking'?'Checking map cells…':audit.status==='valid'?`${audit.verified}/${audit.total} map cells verified. Complete, as read today.`:audit.status==='damaged'?`${audit.verified}/${audit.total} verified; ${audit.failed} damaged/missing cells (first IDs): ${esc(audit.corruptedCells.join(', '))}`:esc(audit.message)}</div>`:''}</div>`:'';
  const technical=mapMarkup({places:state.places,annotations:state.annotations,draft:state.mapDraft,fixedBounds:state.mapFixedBounds,pack,packList:state.mapPacks,esc,action})+status+atlasStatus+(state.mapFaults.length?'<div class="alert red" role="alert">An imported map could not be displayed. Re-import a verified copy.</div>':'');
- if(active)return technical;
- const pins=state.places.filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lng));
- const focus=pins[0],lat=focus?.lat??12.8,lng=focus?.lng??122.0;
- const bbox=[lng-.38,lat-.23,lng+.38,lat+.23].map(n=>n.toFixed(5)).join('%2C');
- const url='https://www.openstreetmap.org/export/embed.html?bbox='+bbox+'&layer=mapnik'+(focus?'&marker='+lat+'%2C'+lng:'');
- return '<section class="card map-consumer"><div class="row-between wrap"><h3>Places on a map</h3>'+action('+ Save place','add-place','button button-primary button-small')+'</div><div class="map-online-frame"><iframe title="Online OpenStreetMap" loading="lazy" src="'+esc(url)+'" referrerpolicy="strict-origin-when-cross-origin"></iframe></div><div class="tiny muted">Online map · © OpenStreetMap contributors</div>'
-  +(pins.length?'<div class="map-pin-list">'+pins.map(p=>'<div class="prepare-row"><strong>'+esc(p.name)+'</strong>'+link('Open map','https://www.openstreetmap.org/?mlat='+p.lat+'&mlon='+p.lng+'#map=14/'+p.lat+'/'+p.lng)+' '+link('Waze',wazeUrl(p))+'</div>').join('')+'</div>':'<p class="subtext">Save a place with coordinates to put a pin on the map.</p>')
-  +'</section><details class="map-advanced"><summary>Offline maps and annotations</summary>'+technical+'</details>';
+ const pins=placedMarkers(state.places,state.stops,state.selectedTrip);
+ const pinnedIds=new Set(pins.map(p=>p.id));
+ const order=new Map(pins.map(p=>[p.id,p.tripOrder]));
+ const list=state.places.slice().sort((a,b)=>(order.get(a.id)||999)-(order.get(b.id)||999)||String(a.name).localeCompare(String(b.name)));
+ return '<section class="travelit-map-layout"><div class="card travelit-map-primary">'
+  +'<div class="travelit-map-head"><h2>Saved places</h2><div class="action-line">'
+  +action('Fit pins','live-map-fit','button button-small')
+  +action('Pin here','live-map-pick','button button-primary button-small')+'</div></div>'
+  +'<div id="travelit-live-map" class="travelit-map-canvas" role="region" aria-label="Interactive map of saved places"></div>'
+  +'<div id="live-map-status" class="tiny muted" role="status">Loading map…</div>'
+  +'<div class="tiny muted">Online map · © OpenStreetMap contributors</div></div>'
+  +'<aside class="card travelit-map-places"><div class="row-between wrap"><h3>Destinations</h3>'
+  +action('+ Save place','add-place','button button-small')+'</div>'
+  +(list.length?'<div class="travelit-map-place-list">'+list.map(p=>{
+    const valid=pinnedIds.has(p.id),number=order.get(p.id);
+    const google=valid?'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.lat+','+p.lng):null;
+    return '<div class="travelit-map-place"><div class="travelit-map-place-title">'
+     +(number?'<span class="travelit-map-order">'+number+'</span>':'')
+     +'<strong>'+esc(p.name)+'</strong></div><span class="tiny muted">'+(valid?esc(p.category||'Place'):'Needs a pin')+'</span>'
+     +'<div class="action-line">'+(valid?action('Show pin','live-map-focus:'+p.id,'button button-small'):'')
+     +action('Details','place:'+p.id,'button button-small')
+     +(google?link('Google Maps',google)+' '+link('Waze',wazeUrl(p)):'')
+     +'</div></div>';
+   }).join('')+'</div>':'<p class="subtext">Save a place to start your map.</p>')+'</aside></section>'
+  +'<details class="map-advanced"><summary>Offline maps and annotations</summary>'+technical+'</details>';
 }
 function annotationEditor(){const draft=state.mapDraft;if(!draft)return;
  const choices=state.trips.map(t=>`<option value="${esc(t.id)}" ${t.id===state.selectedTrip?'selected':''}>${esc(t.title)}</option>`).join('');
@@ -305,7 +516,7 @@ function renderPreparation(t){
    return '<div class="prepare-row"><span class="prepare-state" aria-hidden="true">'+(ready?'✓':'○')+'</span><div class="prepare-copy"><strong>'+title+'</strong><small>'+(ready?'Reviewed':'Review before departure')+'</small></div>'+action('Open','prep-jump:'+target,'button button-small')+'</div>';
   }).join('')+'</div></section>';
 }
-function renderTrips(){const t=selected(),cards=state.trips.map(v=>`<article class="card trip-card interactive" data-action="choose-trip:${esc(v.id)}"><span class="dates">${dateShort(v.startDate)} — ${dateShort(v.endDate)}</span><h3 style="margin:7px 0">${esc(v.title)}</h3><p class="card-meta">${esc(v.timezone)} ${t?.id===v.id?'· Currently selected':''}</p></article>`).join('');return `${section('Your journeys',`${state.trips.length} planned trips`,action('+ New trip','new-trip','button button-primary button-small'))}${cards?`<div class="cards">${cards}</div>`:`<div class="placeholder"><b>Start planning your next journey.</b><span>Create a trip with departure and return dates, then add scheduled stops and a packing list.</span>${action('Create a trip','new-trip')}</div>`}${t?`<section class="trip-workspace"><div class="row-between wrap"><div><h2>${esc(t.title)}</h2><p class="subtext">${dateShort(t.startDate)} – ${dateShort(t.endDate)}</p></div><div class="row wrap">${action('Edit trip','edit-trip')}${action('+ Quick activity','add-stop','button button-small')}</div></div><div class="view-tabs"><button data-trip-tab="itinerary" class="${state.tripTab==='itinerary'?'active':''}">Itinerary</button><button data-trip-tab="calendar" class="${state.tripTab==='calendar'?'active':''}">Calendar</button><button data-trip-tab="packing" class="${state.tripTab==='packing'?'active':''}">Packing</button><button data-trip-tab="prepare" class="${state.tripTab==='prepare'?'active':''}">Prepare</button><button data-trip-tab="costs" class="${state.tripTab==='costs'?'active':''}">Budget</button><button data-trip-tab="info" class="${state.tripTab==='info'?'active':''}">Trip info</button></div>${state.tripTab==='itinerary'?renderItinerary(t):state.tripTab==='calendar'?renderTripCalendar(t):state.tripTab==='packing'?renderPacking(true):state.tripTab==='costs'?renderCosts(t):state.tripTab==='prepare'?renderPreparation(t):`<div class="card"><p>${esc(t.notes||'No trip notes yet.')}</p></div>`}</section>`:''}`;}
+function renderTrips(){const t=selected(),cards=state.trips.filter(v=>v.id!==t?.id).map(v=>`<article class="card trip-card interactive" data-action="choose-trip:${esc(v.id)}"><span class="dates">${dateShort(v.startDate)} — ${dateShort(v.endDate)}</span><h3 style="margin:7px 0">${esc(v.title)}</h3><p class="card-meta">${esc(v.timezone)} ${t?.id===v.id?'· Currently selected':''}</p></article>`).join('');return `${section('Your journeys',`${state.trips.length} planned trips`,action('+ New trip','new-trip','button button-primary button-small'))}${state.trips.length?(cards?`<div class="cards trip-switcher" aria-label="Other journeys"><p class="tiny muted trip-switcher-label">Switch journey</p>${cards}</div>`:``):`<div class="placeholder"><b>Start planning your next journey.</b><span>Create a trip with departure and return dates, then add scheduled stops and a packing list.</span>${action('Create a trip','new-trip')}</div>`}${t?`<section class="trip-workspace"><div class="row-between wrap"><div><h2>${esc(t.title)}</h2><p class="subtext">${dateShort(t.startDate)} – ${dateShort(t.endDate)}</p></div><div class="row wrap">${action('Edit trip','edit-trip')}${action('+ Quick activity','add-stop','button button-small')}</div></div><div class="view-tabs" role="group" aria-label="Trip sections"><button type="button" data-trip-tab="itinerary" class="${state.tripTab==='itinerary'?'active':''}">Itinerary</button><button type="button" data-trip-tab="calendar" class="${state.tripTab==='calendar'?'active':''}">Calendar</button><button type="button" data-trip-tab="packing" class="${state.tripTab==='packing'?'active':''}">Packing</button><button type="button" data-trip-tab="prepare" class="${state.tripTab==='prepare'?'active':''}">Prepare</button><button type="button" data-trip-tab="costs" class="${state.tripTab==='costs'?'active':''}">Budget</button><button type="button" data-trip-tab="info" class="${state.tripTab==='info'?'active':''}">Trip info</button></div>${state.tripTab==='itinerary'?renderItinerary(t):state.tripTab==='calendar'?renderTripCalendar(t):state.tripTab==='packing'?renderPacking(true):state.tripTab==='costs'?renderCosts(t):state.tripTab==='prepare'?renderPreparation(t):`<div class="card"><div class="row-between wrap"><h3>Trip notes</h3>${action('+ Note','add-note:trip:'+t.id,'button button-small')}</div>${noteCards(linkedNotes(state.notes,'trip',t.id))}</div>`}</section>`:''}`;}
 function itineraryInputRow(s=null,trip=null){
  const placeChoices=state.places.map(p=>`<option value="${esc(p.id)}" ${s?.placeId===p.id?'selected':''}>${esc(p.name)}</option>`).join('');
  return `<tr data-stop-id="${esc(s?.id||'')}" data-base-revision="${s?state.recordRevisions['stop:'+s.id]??0:0}"><td><input type="time" aria-label="Time" data-day-field="time" value="${esc(s?.time||'')}"></td><td><input type="text" aria-label="Activity" data-day-field="title" maxlength="150" placeholder="Breakfast, drive, hotel…" value="${esc(s?.title||'')}"></td><td><input type="number" aria-label="Minutes" data-day-field="durationMinutes" min="0" max="10080" value="${s?.durationMinutes??0}"></td><td><select aria-label="Activity type" data-day-field="kind">${selOptions(STOP_KINDS,s?.kind||'Activity')}</select></td><td><select aria-label="Saved place" data-day-field="placeId"><option value="">No pin</option>${placeChoices}</select></td><td><input type="checkbox" aria-label="Fixed booking" data-day-field="fixed" ${s?.fixed?'checked':''}></td><td>${s?action('More','edit-stop:'+s.id,'button button-small'):''}</td></tr>`;
@@ -321,8 +532,70 @@ async function saveItineraryGrid(){
   const base=old?{...old}:{tripId:trip.id,sortOrder:1000000+index};
   return normalizeStop({...base,...form,date:state.chosenDay,createdAt:old?.createdAt,fixed:form.fixed},trip);
  });
+ assertTripDependencyGraph([...byTrip(state.stops).filter(x=>!list.some(y=>y.id===x.id)),...list]);
  const revisions={},presence={};for(const item of list){const row=rows.find(r=>r.dataset.stopId===item.id);const key='stop:'+item.id;revisions[key]=row?Number(row.dataset.baseRevision):0;presence[key]=Boolean(row);}
  await writeLocally(()=>guardedSaveRecords(state.db,'stop',list,{expectedEpoch:state.workspaceEpoch,expectedRevisionByKey:revisions,expectedPresenceByKey:presence}));
+}
+function renderTripTimeline(entries,day){
+ const layout=timelineForDay(entries,day);
+ const intro='<div class="travel-timeline-intro"><strong>Day schedule</strong><span class="tiny muted">Drag flexible activities or adjust by 15 minutes</span></div>';
+ const untimed=layout.untimed.length?'<div class="timeline-unscheduled"><strong>Flexible</strong>'+layout.untimed.map(e=>action(e.title,'timeline-open:'+e.id,'button button-small')).join('')+'</div>':'';
+ if(!layout.events.length){
+  return '<section class="travel-timeline" id="travel-gantt">'+intro
+   +'<div class="timeline-empty">No timed activities yet. Add an activity to begin your day schedule.</div>'
+   +untimed+'</section>';
+ }
+ const ticks=[];
+ // Fewer labels on long time ranges keep text legible within the scrollable track.
+ const tickStep=layout.span>1080?240:layout.span>480?120:60;
+ for(let m=Math.ceil(layout.begin/tickStep)*tickStep;m<=layout.finish;m+=tickStep){
+  const label=m===1440?'24:00':formatClock(m);
+  ticks.push('<span class="timeline-tick" style="left:'+((m-layout.begin)/layout.span*100).toFixed(3)+'%">'+esc(label)+'</span>');
+ }
+ const rows=layout.events.map(event=>{
+  const pos=timelinePosition(event,layout);
+  return '<div class="travel-timeline-row"><div class="timeline-label"><strong>'+esc(event.title)+'</strong><span>'+esc(event.time)+(event.fixed?' · Booking':'')+'</span></div>'
+  +'<div class="timeline-track"><button type="button" class="timeline-bar kind-'+esc(event.kind.toLowerCase())+(event.fixed?' fixed':'')+'"'
+  +' data-stop-id="'+esc(event.id)+'" data-action="timeline-open:'+esc(event.id)+'"'
+  +' style="left:'+pos.left.toFixed(3)+'%;width:'+pos.width.toFixed(3)+'%"'
+  +' title="'+esc(event.title+' · '+event.time)+'" aria-label="Edit '+esc(event.title)+'">'+(event.fixed?'🔒 ':'')+esc(event.title)+'</button></div>'
+  +'<div class="timeline-steps">'+(event.fixed?'':action('−15','timeline-shift:-15:'+event.id,'button button-small')+action('+15','timeline-shift:15:'+event.id,'button button-small'))+'</div></div>';
+ }).join('');
+ return '<section class="travel-timeline" id="travel-gantt">'+intro
+  +'<div class="timeline-pan-hint">Swipe sideways for later hours</div>'
+  +'<div class="travel-timeline-scroll"><div class="travel-timeline-sheet"><div class="timeline-header"><span>Activities</span><div class="timeline-axis">'+ticks.join('')+'</div><span></span></div>'
+  +rows+untimed+'</div></div></section>';
+}
+function bindTripTimeline(){
+ const el=$('#travel-gantt');if(!el)return;
+ let gesture=null,suppress=false;
+ el.addEventListener('pointerdown',e=>{
+  const bar=e.target.closest('.timeline-bar:not(.fixed)');if(!bar)return;
+  const track=bar.closest('.timeline-track'),stop=state.stops.find(s=>s.id===bar.dataset.stopId);
+  if(!track||!stop)return;
+  gesture={id:stop.id,x:e.clientX,width:track.getBoundingClientRect().width,start:Date.now()};
+ });
+ el.addEventListener('pointercancel',()=>{gesture=null;});
+ el.addEventListener('pointerup',e=>{
+  if(!gesture)return;
+  const captured=gesture;gesture=null;
+  const deltaPx=e.clientX-captured.x;
+  if(Math.abs(deltaPx)<9||!captured.width)return;
+  suppress=true;
+  setTimeout(()=>{suppress=false;},350);
+  const trip=selected(),stop=state.stops.find(s=>s.id===captured.id);
+  if(!trip||!stop)return;
+  const layout=timelineForDay(byTrip(state.stops).filter(s=>s.date===state.chosenDay),state.chosenDay);
+  const delta=Math.round((deltaPx/captured.width*layout.span)/15)*15;
+  if(!delta)return;
+  try{
+   const shifted=shiftTimelineStop(stop,delta,trip);
+   void commitTimelineAdjustment(shifted).catch(err=>toast(err.message||String(err),true));
+  }catch(err){toast(err.message||String(err),true);}
+ });
+ el.addEventListener('click',e=>{
+  if(suppress&&e.target.closest('.timeline-bar')){e.preventDefault();e.stopPropagation();}
+ },true);
 }
 function renderItinerary(t){
  if(!state.chosenDay||state.chosenDay<t.startDate||state.chosenDay>t.endDate)state.chosenDay=t.startDate;
@@ -330,11 +603,14 @@ function renderItinerary(t){
  const strip=nearbyTripDays(t,state.chosenDay,dayCount<=14?Math.min(dayCount,14):7);
  const entries=itineraryOrder(byTrip(state.stops).filter(s=>s.date===state.chosenDay));
  const issues=conflicts(entries),travelIssues=travelFeasibility(entries);
+ const linked=byTrip(state.stops).filter(x=>x.predecessorId).length,dependencyIssues=dependencyConflicts(byTrip(state.stops),t);
  return `<div class="day-tools"><button class="button button-small" data-action="day-prev" ${chosenIndex===0?'disabled':''}>←</button><label for="trip-day"><strong>Day ${chosenIndex+1} of ${dayCount}</strong></label><input class="button" id="trip-day" type="date" min="${t.startDate}" max="${t.endDate}" value="${state.chosenDay}"><button class="button button-small" data-action="day-next" ${chosenIndex===dayCount-1?'disabled':''}>→</button></div>
  <div class="day-strip" role="group" aria-label="Select itinerary day">${strip.map(date=>`<button class="day-tile ${date===state.chosenDay?'active':''}" aria-pressed="${date===state.chosenDay}" data-action="select-day:${date}"><span>${new Intl.DateTimeFormat('en-US',{timeZone:'UTC',weekday:'short'}).format(new Date(date+'T12:00:00Z'))}</span><strong>${date.slice(8)}</strong></button>`).join('')}</div>
- <section class="itinerary-editor"><div class="row-between wrap"><div><h3>Day ${chosenIndex+1} · ${dateShort(state.chosenDay)}</h3></div><div class="action-line">${action('View map','show-map')}${action('Copy day','brief-copy-day')}</div></div>
+ <div class="timeline-view-switch" role="group" aria-label="Itinerary view">${action('Timeline','itinerary-mode:timeline','button button-small'+(state.itineraryDisplay==='timeline'?' active':''))}${action('Table','itinerary-mode:table','button button-small'+(state.itineraryDisplay==='table'?' active':''))}${action('+ Activity','add-stop','button button-small')}${linked?action('Reflow','schedule-reflow','button button-small'):''}</div>${dependencyIssues.length?`<div class="schedule-conflicts">${dependencyIssues.length} linked activities need attention. ${action('Review changes','schedule-reflow','button button-small')}</div>`:''}
+ ${state.itineraryDisplay==='timeline'?renderTripTimeline(entries,state.chosenDay):''}
+ ${state.itineraryDisplay==='table'?`<section class="itinerary-editor"><div class="row-between wrap"><div><h3>Day ${chosenIndex+1} · ${dateShort(state.chosenDay)}</h3></div><div class="action-line">${action('View map','show-map')}${action('Copy day','brief-copy-day')}</div></div>
  <div class="sheet-scroll"><table class="itinerary-table"><thead><tr><th>Time</th><th>Activity / stop</th><th>Min</th><th>Type</th><th>Place</th><th>Fixed</th><th></th></tr></thead><tbody id="itinerary-grid-body">${entries.map(s=>itineraryInputRow(s,t)).join('')}${Array.from({length:2},()=>itineraryInputRow(null,t)).join('')}</tbody></table></div>
- <div class="editorial-actions">${action('+ Row','add-itinerary-row','button button-small')}${action('Save day','save-itinerary-grid','button button-primary button-small')}</div></section>
+ <div class="editorial-actions">${action('+ Row','add-itinerary-row','button button-small')}${action('Save day','save-itinerary-grid','button button-primary button-small')}</div></section>`:''}
  ${(issues.length||travelIssues.some(i=>i.kind==='insufficient-transfer-time'))?`<div class="alert red" style="margin-top:10px">Check your schedule: some activities overlap or leave insufficient travel time.</div>`:''}`;
 }
 function renderTripCalendar(t){
@@ -356,7 +632,7 @@ function renderTripCalendar(t){
  const dayDetail=map.get(state.chosenDay);
  return `<div class="card"><div class="row-between wrap"><h3>${esc(monthLabel)}</h3><div class="action-line" style="margin:0"><button class="button button-small" data-action="calendar-month:${prev}" ${prev<earliest?'disabled':''}>← Month</button><button class="button button-small" data-action="calendar-month:${next}" ${next>latest?'disabled':''}>Month →</button></div></div><p class="subtext">TravelIt's internal calendar. LiveIt synchronization is not yet connected.</p><div class="calendar-grid"><div class="calendar-weekday">Sun</div><div class="calendar-weekday">Mon</div><div class="calendar-weekday">Tue</div><div class="calendar-weekday">Wed</div><div class="calendar-weekday">Thu</div><div class="calendar-weekday">Fri</div><div class="calendar-weekday">Sat</div>${cells.join('')}</div></div><div class="card" style="margin-top:12px">${section(state.chosenDay,`${dayDetail?.count||0} activities`,action('Open day in itinerary','calendar-open-day'))}${(dayDetail?.stops||[]).length?dayDetail.stops.map(renderStop).join(''):'<p class="subtext">No activities saved for this date.</p>'}</div>`;
 }
-function renderStop(s){const p=placeById(s.placeId);return `<div class="schedule-item"><div class="schedule-time">${s.time||'Flexible'}</div><div class="schedule-main"><div class="schedule-title">${esc(s.title)}</div><div class="schedule-desc">${esc(s.kind)}${s.durationMinutes?` · ${s.durationMinutes} min`:''}${s.fixed?' · Fixed booking':''}${s.legDistanceKm!==null&&s.legDistanceKm!==undefined?' · Incoming drive '+s.legDistanceKm+' km':''}${s.legTravelMinutes!==null&&s.legTravelMinutes!==undefined?' / '+s.legTravelMinutes+' min (estimated)':''}${p?` · ${esc(p.name)}`:''}</div>${s.notes?`<p class="subtext">${esc(s.notes)}</p>`:''}<div class="action-line">${!s.time&&!s.fixed?`${action('↑','move-flex-up:'+s.id,'button button-small','aria-label="Move flexible activity earlier"')}${action('↓','move-flex-down:'+s.id,'button button-small','aria-label="Move flexible activity later"')}`:''}${action('Edit','edit-stop:'+s.id,'button button-small')}${p&&wazeUrl(p)?link('Waze',wazeUrl(p)):''}${action('Remove','delete-stop:'+s.id,'button button-small button-danger')}</div></div></div>`;}
+function renderStop(s){const p=placeById(s.placeId);return `<div class="schedule-item"><div class="schedule-time">${s.time||'Flexible'}</div><div class="schedule-main"><div class="schedule-title">${esc(s.title)}</div><div class="schedule-desc">${esc(s.kind)}${s.durationMinutes?` · ${s.durationMinutes} min`:''}${s.fixed?' · Fixed booking':''}${s.legDistanceKm!==null&&s.legDistanceKm!==undefined?' · Incoming drive '+s.legDistanceKm+' km':''}${s.legTravelMinutes!==null&&s.legTravelMinutes!==undefined?' / '+s.legTravelMinutes+' min (estimated)':''}${p?` · ${esc(p.name)}`:''}</div>${s.notes?`<p class="subtext">${esc(s.notes)}</p>`:''}<div class="action-line">${!s.time&&!s.fixed?`${action('↑','move-flex-up:'+s.id,'button button-small','aria-label="Move flexible activity earlier"')}${action('↓','move-flex-down:'+s.id,'button button-small','aria-label="Move flexible activity later"')}`:''}${action('Edit','edit-stop:'+s.id,'button button-small')}${action('+ Note','add-note:stop:'+s.id,'button button-small')}${p&&wazeUrl(p)?link('Waze',wazeUrl(p)):''}${action('Remove','delete-stop:'+s.id,'button button-small button-danger')}</div></div></div>`;}
 function renderRoadQuickList(queue,nextId){
  const remaining=queue.items.filter(item=>item.id!==nextId).slice(0,3);
  return `<section class="road-quick card" aria-label="Upcoming stops"><div class="row-between wrap"><h3>Following stops</h3><span class="subtext">Saved itinerary · not live GPS</span></div>
@@ -368,13 +644,16 @@ function renderRoadQuickList(queue,nextId){
 }
 function renderToday(){
  const now=new Date(),trip=pickTodayTrip(state.trips,now,state.selectedTrip);
- if(!trip)return `<section class="empty-essentials"><strong>No trip scheduled</strong>${action('Plan a trip','new-trip','button button-primary button-small')}</section>`;
+ if(!trip)return '<section class="editorial-today-empty"><span class="eyebrow">TODAY, AND THE DAYS AHEAD</span><h2>Room for another journey.</h2><p>No trip scheduled</p><div class="action-line">'+action('Plan a trip','new-trip','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>';
  const date=trip.localDate,onTrip=trip.onTrip,filtered=itineraryOrder(state.stops.filter(s=>s.tripId===trip.id&&s.date===(onTrip?date:trip.startDate)));
  const clock=tripClock(now,trip.timezone),nextDecision=nextTodayStop(filtered,clock,{onTrip}),next=nextDecision.stop,p=next?.placeId?placeById(next.placeId):null;
  const firstImage=state.places.find(q=>q.coverImage&&filtered.some(x=>x.placeId===q.id));
+ const moments=state.photos.filter(x=>x.tripId===trip.id).slice(0,4);
  return `<section class="journal-intro today-intro ${firstImage?'has-cover':''}"><div><span class="eyebrow">${onTrip?'TODAY ON THE ROAD':'UPCOMING JOURNEY'}</span><h2>${esc(trip.title)}</h2><p>${esc(dateShort(onTrip?date:trip.startDate))} · ${filtered.length} planned ${filtered.length===1?'stop':'stops'}</p>${action('Open itinerary','today-open-trip','button button-primary button-small')}</div>${firstImage?`<div class="journal-intro-cover">${placeCover(firstImage)}</div>`:''}</section>
  ${next?`<div class="next-moment"><span class="eyebrow">NEXT STOP</span><h3>${esc(next.title)}</h3><p>${esc(next.time||'Whenever you are ready')}${p?' · '+esc(p.name):''}</p><div class="story-actions">${p&&wazeUrl(p)?link('Directions',wazeUrl(p)):''}${p?.sourceUrl?link('Saved link',p.sourceUrl):''}</div></div>`:''}
- <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>`;
+ <section class="editorial-schedule"><div class="journal-heading"><div><span class="eyebrow">THE DAY AHEAD</span><h2>Our itinerary</h2></div>${action('Edit day','today-open-trip')}</div>${filtered.length?filtered.map(s=>`<div class="editorial-stop"><span>${esc(s.time||'—')}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.kind)}${s.durationMinutes?' · '+s.durationMinutes+' min':''}</p></div></div>`).join(''):'<div class="quiet-empty"><strong>No stops planned yet.</strong><p>Add an activity from your trip itinerary.</p></div>'}</section>
+ <div class="today-foot-actions">${action('+ Trip note','add-note:trip:'+trip.id,'button button-small')}${action('Photo stories','open-photos','button button-small')}</div>
+ ${moments.length?'<section class="today-moments"><div class="journal-heading"><div><span class="eyebrow">FROM OUR COLLECTION</span><h2>Moments to keep</h2></div></div><div class="today-moments-grid">'+moments.map(x=>'<button class="today-moment" data-action="photo-open:'+esc(x.id)+'"><img src="'+esc(x.image)+'" alt="'+esc(x.title)+'"><span>'+esc(x.title)+'</span></button>').join('')+'</div></section>':''}`;
 }
 async function savePackingBatch(){
  const trip=selected(),body=$('#packing-draft-body');if(!trip||!body)throw Error('Choose a trip and enter packing items first.');
@@ -389,24 +668,79 @@ function renderPacking(compact=false){
  const t=selected();if(!t)return `${section('Packing','Choose a trip first')}<div class="placeholder"><b>Choose a trip to prepare a packing list.</b>${action('Open trips','open-trips')}</div>`;
  const items=byTrip(state.packing),packed=items.filter(p=>p.packed).length,pct=items.length?Math.round(100*packed/items.length):0;
  return `${!compact?section('Packing',esc(t.title)):''}<section class="card packing-sheet" aria-label="Packing table"><div class="row-between wrap"><div><h3>Packing for ${esc(t.title)}</h3><p class="subtext">${packed} of ${items.length} ready</p></div>${action('Mind map','packing-mindmap','button button-primary button-small')}${action('Use template','packing-template','button button-small')}</div><div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
- ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
+ ${items.length?`<div class="sheet-scroll"><table class="packing-table"><thead><tr><th scope="col">Packed</th><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead><tbody>${items.map(i=>`<tr><td><input type="checkbox" id="pack-${esc(i.id)}" data-pack-id="${esc(i.id)}" aria-label="Packed ${esc(i.label)}" ${i.packed?'checked':''}></td><td><label for="pack-${esc(i.id)}" class="${i.packed?'done':''}">${esc(i.label)}${i.owner?` <small class="muted">· ${esc(i.owner)}</small>`:''}</label></td><td>${i.quantity}</td><td>${esc(i.group||i.category)}</td><td class="table-actions">${action('Edit','edit-pack:'+i.id,'button button-small')}${action('✕','delete-pack:'+i.id,'button button-small button-ghost','aria-label="Remove item"')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="subtext">Your list is empty. Add several items in the table below.</p>'}
  <h3 class="packing-add-title">Add multiple items</h3><div class="sheet-scroll"><table class="packing-table packing-entry"><thead><tr><th scope="col">Item</th><th scope="col">Qty</th><th scope="col">Category</th><th scope="col">Person</th></tr></thead><tbody id="packing-draft-body">${Array.from({length:4},packingDraftRow).join('')}</tbody></table></div><div class="action-line">${action('+ Add row','packing-add-row','button button-small')}${action('Save all new items','packing-save-rows','button button-primary button-small')}</div><p class="tiny muted">Fill several rows, then save them together. Your list stays available on this device.</p></section>`;
 }
+function photoImportEditor(){
+ const tripOptions='<option value="">No trip</option>'+state.trips.map(t=>'<option value="'+esc(t.id)+'" '+(t.id===state.selectedTrip?'selected':'')+'>'+esc(t.title)+'</option>').join('');
+ const placeOptions='<option value="">No place</option>'+state.places.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ const markup='<div class="photo-upload-form"><label class="photo-file-drop"><strong>Choose photos</strong><span>Up to 8 at a time</span><input id="f-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label>'
+  +'<div class="form-grid">'+field('photoDate','Date (optional)','', 'date')
+  +'<div class="field"><label for="f-photo-trip">Trip (optional)</label><select id="f-photo-trip" name="tripId">'+tripOptions+'</select></div>'
+  +'<div class="field full"><label for="f-photo-place">Saved place (optional)</label><select id="f-photo-place" name="placeId">'+placeOptions+'</select></div></div></div>';
+ openModal('Add to photo stories',markup,async f=>{
+  const selectedFiles=Array.from($('#f-photos')?.files||[]);
+  if(!selectedFiles.length||selectedFiles.length>8)throw Error('Choose 1 to 8 photos.');
+  if(state.photos.length+selectedFiles.length>120)throw Error('This local collection supports up to 120 compressed photos.');
+  const now=new Date().toISOString(),records=[];
+  for(const file of selectedFiles){
+   const image=await imageCoverFromFile(file);
+   const title=file.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim().slice(0,150)||'Family memory';
+   records.push(normalizePhoto({title,image,placeId:f.placeId,tripId:f.tripId,photoDate:f.photoDate},now));
+  }
+  state.photoFilter='photos';
+  await writeLocally(()=>guardedSaveRecords(state.db,'photo',records,{
+   expectedEpoch:modalBaseEpoch,expectedWorkspaceRevision:modalBaseRevisions.__workspaceRevision,
+   expectedRevisionByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,0])),
+   expectedPresenceByKey:Object.fromEntries(records.map(x=>['photo:'+x.id,false]))
+  }));
+ },'Save photos');
+}
+function photoEditEditor(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ const options=(items,selected)=>'<option value="">None</option>'+items.map(v=>'<option value="'+esc(v.id)+'" '+(selected===v.id?'selected':'')+'>'+esc(v.title||v.name)+'</option>').join('');
+ const markup='<div class="photo-edit-cover"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"></div><div class="form-grid">'
+  +field('title','Title',p.title,'text','required maxlength="150"')
+  +field('photoDate','Date',p.photoDate||'','date')
+  +textArea('caption','Caption',p.caption||'')
+  +'<div class="field"><label for="f-tripId">Trip</label><select id="f-tripId" name="tripId">'+options(state.trips,p.tripId)+'</select></div>'
+  +'<div class="field"><label for="f-placeId">Place</label><select id="f-placeId" name="placeId">'+options(state.places,p.placeId)+'</select></div></div>';
+ openModal('Edit photo',markup,async f=>{
+  await commit('photo',normalizePhoto({...p,...f,id:p.id,createdAt:p.createdAt}));
+ },'Save');
+}
+function photoDetails(id){
+ const p=state.photos.find(x=>x.id===id);if(!p)throw Error('Photo not found.');
+ openModal(p.title,'<div class="photo-lightbox"><img src="'+esc(p.image)+'" alt="'+esc(p.title)+'"><h3>'+esc(p.title)+'</h3>'
+  +(p.caption?'<p>'+esc(p.caption)+'</p>':'')
+  +'<div class="action-line">'+action('Edit','photo-edit:'+p.id,'button button-small')
+  +action('Remove','photo-delete:'+p.id,'button button-small button-danger')+'</div></div>');
+ $('#modal-body [data-action^="photo-edit:"]')?.addEventListener('click',()=>photoEditEditor(p.id));
+ $('#modal-body [data-action^="photo-delete:"]')?.addEventListener('click',async()=>{if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',p.id);}});
+}
 function renderPhotos(){
- const covers=state.places.filter(p=>p.coverImage);
- return covers.length?`<div class="library-toolbar"><div><span class="count-label">${covers.length} saved covers</span></div>${action('Saved places','go-explore','button button-small')}</div><div class="photo-story-grid">${covers.map(p=>`<button class="photo-story" data-action="place:${esc(p.id)}" aria-label="View ${esc(p.name)}">${placeCover(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>`:`<section class="empty-essentials"><strong>No photos yet</strong><span>Add a cover to a saved place.</span>${action('Browse places','go-explore','button button-primary button-small')}</section>`;
+ const items=galleryItems(state.photos,state.places,state.photoFilter,state.selectedTrip);
+ const all=galleryItems(state.photos,state.places);
+ const tabs=[['all','All'],['photos','Memories'],['places','Saved places']];
+ const filters='<div class="photo-filters">'+tabs.map(pair=>action(pair[1],'photo-filter:'+pair[0],'photo-filter'+(state.photoFilter===pair[0]?' active':''))).join('')+'</div>';
+ const cards=items.map((p,index)=>'<button type="button" class="photo-story editorial-photo '+(index%5===0?'large':'')+'" data-action="'+(p.kind==='cover'?'place:':'photo-open:')+esc(p.id)+'" aria-label="View '+esc(p.title)+'"><img src="'+esc(p.image)+'" loading="lazy" alt=""><span class="photo-caption"><small>'+esc(p.kind==='cover'?'Saved place':p.photoDate||'Our moments')+'</small><strong>'+esc(p.title)+'</strong></span></button>').join('');
+ return '<div class="editorial-gallery"><section class="editorial-gallery-head"><span class="eyebrow">OUR PHOTO STORIES</span><h2>The moments we keep.</h2><p>'+all.length+' '+(all.length===1?'memory':'memories')+' and saved views</p><div class="action-line">'+action('+ Add photos','photo-add','button button-primary button-small')+action('Explore places','go-explore','button button-small')+'</div></section>'
+  +filters+(items.length?'<div class="photo-story-grid editorial-photo-grid">'+cards+'</div>':
+   '<div class="editorial-empty"><span class="eyebrow">THE COLLECTION</span><h3>No photos yet</h3><p>Add a photo or save a cover for a favorite place.</p>'
+   +action('+ Add photos','photo-add','button button-primary button-small')+'</div>')
+  +'</div>';
 }
 function renderMoreTechnical(){return `${section('Library & settings','Your data stays in this local TravelIt workspace')}<div class="grid2"><div class="card"><h3>Local backup and recovery</h3><p class="subtext">Export TravelIt domain records, including any external KeepIt reference links, and local-only change history as JSON. This does not export the actual KeepIt notes, embedded assets, or verified sync receipts. Do not include sensitive documents: this backup is <strong>not encrypted</strong>.</p><div class="action-line">${action('Export backup','export-backup','button button-primary button-small')}${action('Restore backup','import-backup')}</div>${state.recovery?`<div class="alert blue" style="margin-top:12px"><strong>Previous workspace available</strong><p class="subtext">Snapshot created ${esc(state.recovery.savedAt)} · ${state.recovery.records} records</p><div class="action-line">${action('Undo last restore','undo-restore','button button-small')}</div></div>`:''}<div class="divider"></div><p class="tiny muted">Never clear browser data, uninstall the PWA, or switch devices without exporting and verifying a backup. Browser storage is not guaranteed permanent.</p></div><div class="card"><h3>Local data diagnostics</h3><div class="divider"></div><h4>Offline startup check</h4><p class="subtext">Verify that every application-shell file is actually cached. A registered service worker alone does not prove offline availability.</p><div class="action-line">${action('Verify offline shell','verify-offline-shell','button button-primary button-small')}</div>${state.shellReport?`<div role="status" class="alert ${state.shellReport.ready?'blue':'red'}" style="margin-top:10px"><b>${state.shellReport.ready?'Cached for this browser':'Offline shell not verified'}</b><p>${esc(state.shellReport.cached)}/${esc(state.shellReport.total)} required files cached · ${esc(state.shellReport.reason)}</p>${state.shellReport.missing.length?`<p class="tiny">Missing: ${esc(state.shellReport.missing.slice(0,5).join(', '))}${state.shellReport.missing.length>5?' …':''}</p>`:''}</div>`:'<p class="subtext">Not checked yet. This app does not claim offline readiness merely because it has a service worker.</p>'}<div class="divider"></div><p class="subtext">Checks this browser's database for successful temporary write/readback and scans existing records for broken references. This does not prove data survives device clearing or confirm cloud sync.</p><div class="action-line">${action('Run local diagnostic','run-local-diagnostic','button button-primary button-small')}</div>${state.storageHealth?`<div class="alert ${state.storageHealth.ok?'blue':'red'}" style="margin-top:10px">${esc(state.storageHealth.message)}</div>`:''}${state.localAudit?`<p class="subtext" style="margin-top:10px">${state.localAudit.recordCount} records · ${state.localAudit.errors} error(s) · ${state.localAudit.warnings} warning(s) · ${state.localAudit.commandCount} local-only changes</p>${state.localAudit.issues.length?`<ul class="offline-warnings">${state.localAudit.issues.slice(0,15).map(i=>`<li>${esc(i.code)}: ${esc(i.detail)} (${esc(i.entity)})</li>`).join('')}</ul>${state.localAudit.issues.length>15?'<p>Additional issues omitted from this view.</p>':''}`:'<p class="subtext">No relationship problems detected in the scanned records.</p>'}`:''}<p class="tiny muted">Backups are still required. A successful probe proves only immediate write/readback on this device.</p></div><div class="card"><h3>Integration status</h3><div class="row-between" style="margin-top:13px"><span>KeepIt Notes and document assets</span><span class="tag yellow">Not connected</span></div><p class="tiny muted">${state.keepitAssociations.length} saved native-note reference(s), if any, are external dependencies—not backed-up note content. Native notes are not connected in this standalone version.</p><div class="row-between" style="margin-top:13px"><span>LiveIt calendar</span><span class="tag yellow">Not connected</span></div><div class="row-between" style="margin-top:13px"><span>Offline GeoJSON reference maps</span><span class="tag ${activePack()?'':'yellow'}">${activePack()?'Imported locally':'No map loaded'}</span></div><div class="divider"></div><p class="subtext">${state.outbox.length} local change command(s) retained, not synchronized. Do not interpret this count as pending successful cloud delivery.</p></div><div class="card"><h3>Photo library</h3><div class="photo-placeholder" aria-hidden="true">▧</div><p class="subtext">The full travel-photo gallery will link to KeepIt media after the approved read-only bridge is verified. No personal images are imported into this local foundation.</p></div><div class="card"><h3>Travel documents</h3><div class="alert red" style="margin:13px 0"><b>Do not import passports, IDs, or tickets here.</b> Protected KeepIt previews, encryption at rest, and device authentication are required before this feature can be enabled.</div><p class="subtext">The document-wallet contract is in the specification package; this build contains no insecure substitute.</p></div>${renderVehicles()}</div>`;}
 function renderMore(){
- return `<section class="essential-library"><div class="essential-row"><div><h3>Backup</h3><p class="tiny muted">Not encrypted. Keep your backup private.</p></div><div class="action-line">${action('Export','export-backup','button button-primary button-small')}${action('Restore','import-backup','button button-small')}</div></div><div class="essential-row"><div><h3>Vehicles</h3><p class="tiny muted">${state.vehicles.length} saved</p></div><div class="action-line">${action('+ Add','add-vehicle','button button-small')}</div></div>${state.vehicles.length?`<div class="vehicle-inline-list">${state.vehicles.map(v=>`<div class="row-between"><span>${esc(v.name)}</span>${action('Edit','edit-vehicle:'+v.id,'button button-small')}</div>`).join('')}</div>`:''}</section><details class="advanced-diagnostics"><summary>Advanced</summary>${renderMoreTechnical()}${renderOfflineReadiness()}</details>`;
+ return `<section class="essential-library"><div class="essential-row"><div><h3>Notes</h3><p class="tiny muted">${state.notes.length} saved</p></div>${action('+ Note','add-note','button button-primary button-small')}</div>${state.notes.length?noteCards(state.notes):''}<div class="essential-row"><div><h3>Backup</h3><p class="tiny muted">Not encrypted. Keep your backup private.</p></div><div class="action-line">${action('Export','export-backup','button button-primary button-small')}${action('Restore','import-backup','button button-small')}</div></div><div class="essential-row"><div><h3>Vehicles</h3><p class="tiny muted">${state.vehicles.length} saved</p></div><div class="action-line">${action('+ Add','add-vehicle','button button-small')}</div></div>${state.vehicles.length?`<div class="vehicle-inline-list">${state.vehicles.map(v=>`<div class="row-between"><span>${esc(v.name)}</span>${action('Edit','edit-vehicle:'+v.id,'button button-small')}</div>`).join('')}</div>`:''}</section><details class="advanced-diagnostics"><summary>Advanced</summary>${renderMoreTechnical()}${renderOfflineReadiness()}</details>`;
 }
-function render(){renderNav();$('#today-shortcut').hidden=true;$('#quick-save').hidden=state.view!=='explore';$('#page-heading').textContent=({explore:'Explore',map:'Map pins',trips:'My Trips',today:'Today',packing:'Packing',photos:'Photos',more:'My Library'})[state.view]||'Explore';colorStatus();$('#main').innerHTML=state.view==='explore'?renderExplore():state.view==='map'?renderMap():state.view==='trips'?renderTrips():state.view==='today'?renderToday():state.view==='packing'?renderPacking():state.view==='photos'?renderPhotos():renderMore();}
-function placeDetails(id){const p=placeById(id);if(!p)return toast('Place not found',true);const map=p.lat!==null?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lat+','+p.lng)}`:null;openModal(p.name,`<div class="stack"><div class="row wrap"><span class="tag">${esc(p.category)}</span><span class="chip">${p.lat!==null?`${p.lat}, ${p.lng}`:'Location not pinned'}</span></div>${p.notes?`<p>${esc(p.notes)}</p>`:'<p class="muted">No note added yet.</p>'}${p.sourceUrl?`<div><strong>Original discovery link</strong><p class="subtext" style="overflow-wrap:anywhere">${esc(p.sourceUrl)}</p>${link('Open original source',p.sourceUrl)}</div>`:''}<div class="action-line">${p.lat!==null?`${link('Navigate with Waze',wazeUrl(p))} ${link('View in Google Maps',map)}`:''}<button type="button" class="button" id="detail-edit">Edit place</button><button type="button" class="button button-danger" id="detail-delete">Delete place</button></div></div>`);$('#detail-edit').addEventListener('click',()=>placeEditor(p));$('#detail-delete').addEventListener('click',async()=>{if(confirm(`Delete saved place “${p.name}”? Any trip stop referencing it retains its text but loses the pin.`)){closeModal();await erase('place',p.id);}});}
-async function exportBackup(){const data=await allData(state.db);const backup=await createBackup(data);const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`TravelIt_VerifiedBackup_${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('SHA-256 protected backup generated. Store a separate copy safely.');}
+function render(){destroyLiveMap();renderNav();$('#today-shortcut').hidden=true;$('#quick-save').hidden=state.view!=='explore';$('#page-heading').textContent=({explore:'Explore',map:'Map',trips:'My Trips',today:'Today',packing:'Packing',photos:'Photos',more:'My Library'})[state.view]||'Explore';colorStatus();$('#main').innerHTML=state.view==='explore'?renderExplore():state.view==='map'?renderMap():state.view==='trips'?renderTrips():state.view==='today'?renderToday():state.view==='packing'?renderPacking():state.view==='photos'?renderPhotos():renderMore();wireMediaFallbacks();if(state.view==='trips'&&state.tripTab==='itinerary'&&state.itineraryDisplay==='timeline')bindTripTimeline();if(state.view==='map'){const canvas=$('#travelit-live-map');if(canvas)void mountLiveMap({container:canvas,places:state.places,stops:state.stops,selectedTripId:state.selectedTrip,onPlaceClick:id=>placeDetails(id),onPinPick:coords=>{placeEditor();const lat=$('#f-lat'),lng=$('#f-lng');if(lat&&lng){lat.value=coords.lat.toFixed(6);lng.value=coords.lng.toFixed(6);const details=lat.closest('details');if(details)details.open=true;modalDirty=true;}}});}}
+function placeDetails(id){const p=placeById(id);if(!p)return toast('Place not found',true);const map=p.lat!==null?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.lat+','+p.lng)}`:null;openModal(p.name,`<div class="stack"><div class="row wrap"><span class="tag">${esc(p.category)}</span><span class="chip">${p.lat!==null?`${p.lat}, ${p.lng}`:'Location not pinned'}</span></div>${p.notes?`<p>${esc(p.notes)}</p>`:'<p class="muted">No note added yet.</p>'}${noteCards(linkedNotes(state.notes,'place',p.id))}${p.sourceUrl?`<div><strong>Original discovery link</strong><p class="subtext" style="overflow-wrap:anywhere">${esc(p.sourceUrl)}</p>${link(mediaLinkInfo(p.sourceUrl).kind==='video'?'Watch video':'Open original source',p.sourceUrl)}</div>`:''}<div class="action-line">${p.lat!==null?`${link('Navigate with Waze',wazeUrl(p))} ${link('View in Google Maps',map)}`:''}<button type="button" class="button" id="detail-note">+ Note</button><button type="button" class="button" id="detail-edit">Edit place</button><button type="button" class="button button-danger" id="detail-delete">Delete place</button></div></div>`);$('#detail-note').addEventListener('click',()=>noteEditor(null,'place',p.id));$('#detail-edit').addEventListener('click',()=>placeEditor(p));$('#detail-delete').addEventListener('click',async()=>{if(confirm(`Delete saved place “${p.name}”? Any trip stop referencing it retains its text but loses the pin.`)){closeModal();await erase('place',p.id);}});}
+async function exportBackup(){const data=await allData(state.db);const backup=await createBackup(data);const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`TravelIt_VerifiedBackup_${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast(blob.size>MAX_BACKUP_IMPORT_BYTES?'Backup downloaded, but it exceeds this version’s 64 MiB restore limit. Preserve your copy and reduce locally stored photos before your next backup.':'SHA-256 protected backup generated. Store a separate copy safely.',blob.size>MAX_BACKUP_IMPORT_BYTES);}
 /** No source data are written until the user has seen the verified backup impact. */
 async function readVerifiedRestoreFile(file){
  if(!file)throw Error('Choose a backup file.');
- if(file.size>25*1024*1024)throw Error('Backup exceeds 25 MB.');
+ assertBackupFileSize(file.size);
  let data;try{data=JSON.parse(await file.text());}catch{throw Error('Backup is not valid JSON.');}
  return verifyBackup(data);
 }
@@ -595,6 +929,20 @@ function currentMapBounds(){
  return (pack?.regionAtlas||pack?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(pack.bounds):mapBounds(all);
 }
 async function handler(target){const actionName=target.dataset.action;if(!actionName)return;try{
+  if(actionName==='open-photos'){setNav('photos');return;}
+  if(actionName==='photo-add'){photoImportEditor();return;}
+  if(actionName.startsWith('photo-filter:')){state.photoFilter=actionName.slice(13);render();return;}
+  if(actionName.startsWith('photo-open:')){photoDetails(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-edit:')){photoEditEditor(actionName.slice(11));return;}
+  if(actionName.startsWith('photo-delete:')){const id=actionName.slice(13);if(confirm('Remove this local photo?')){closeModal(true);await erase('photo',id);}return;}
+  if(actionName==='schedule-reflow'){previewScheduleReflow();return;}
+  if(actionName.startsWith('itinerary-mode:')){state.itineraryDisplay=actionName.slice(15)==='table'?'table':'timeline';render();return;}
+  if(actionName.startsWith('timeline-open:')){const v=state.stops.find(x=>x.id===actionName.slice(14));if(!v)throw Error('Activity not found');stopEditor(v);return;}
+  if(actionName.startsWith('timeline-shift:')){const tokens=actionName.split(':');const delta=Number(tokens[1]),trip=selected(),stop=state.stops.find(x=>x.id===tokens[2]);if(!trip||!stop)throw Error('Activity not found');const shifted=shiftTimelineStop(stop,delta,trip);await commitTimelineAdjustment(shifted);return;}
+  if(actionName==='add-note'){void noteEditor();return;}
+  if(actionName.startsWith('add-note:')){const parts=actionName.split(':');if(!['trip','place','stop'].includes(parts[1])||!parts[2])throw Error('Unknown note target.');void noteEditor(null,parts[1],parts.slice(2).join(':'));return;}
+  if(actionName.startsWith('edit-note:')){const note=state.notes.find(n=>n.id===actionName.slice(10));if(!note)throw Error('Note not found');void noteEditor(note);return;}
+  if(actionName.startsWith('delete-note:')){const id=actionName.slice(12);if(confirm('Remove this saved note?'))await erase('note',id);return;}
   if(actionName==='today-open-prepare'){const t=pickTodayTrip(state.trips,new Date(),state.selectedTrip);if(!t)throw Error('No planned trip to review.');state.selectedTrip=t.id;state.tripTab='prepare';setNav('trips');return;}
   if(actionName.startsWith('prep-jump:')){const destination=actionName.slice('prep-jump:'.length);if(destination==='places'){setNav('explore');return;}if(destination==='offline'){setNav('more');return;}if(['packing','itinerary','budget'].includes(destination)){state.tripTab=destination==='budget'?'costs':destination;setNav('trips');return;}throw Error('Unknown preparation action.');}
   if(actionName==='brief-trip'){await shareBrief('trip');return;}if(actionName==='brief-day'){await shareBrief('day');return;}if(actionName==='brief-copy-day'){await shareBrief('day',true);return;}if(actionName==='brief-copy-today'){await shareBrief('today',true);return;}if(actionName==='brief-download-today'){await shareBrief('today');return;}if(actionName==='run-local-diagnostic'){try{const result=await storageReadbackProbe(state.db);state.storageHealth={ok:true,message:result.ok?'Temporary IndexedDB write/readback verified on this device.':'Diagnostic incomplete.'};}catch(e){state.storageHealth={ok:false,message:'Local storage diagnostic failed: '+(e.message||String(e))};}try{state.localAudit=auditWorkspace(await allData(state.db));}catch(e){state.localAudit={recordCount:0,commandCount:0,issues:[{code:'AUDIT_FAILURE',entity:'workspace',detail:e.message||String(e)}],errors:1,warnings:0};}render();toast(state.storageHealth.ok?'Local integrity check completed.':'Local storage check failed. Export any recoverable backup.',!state.storageHealth.ok);return;}if(actionName==='add-vehicle')vehicleEditor();else if(actionName.startsWith('edit-vehicle:'))vehicleEditor(state.vehicles.find(v=>v.id===actionName.slice('edit-vehicle:'.length)));else if(actionName.startsWith('delete-vehicle:')){const id=actionName.slice('delete-vehicle:'.length);if(state.trips.some(t=>t.vehicleId===id))throw Error('This vehicle is assigned to a trip. Change the trip vehicle before removal.');if(confirm('Remove this vehicle profile?'))await erase('vehicle',id);}else if(actionName==='packing-mindmap')packingMindmapEditor();else if(actionName==='add-expense')expenseEditor();else if(actionName.startsWith('edit-expense:'))expenseEditor(state.expenses.find(e=>e.id===actionName.slice('edit-expense:'.length)));else if(actionName.startsWith('delete-expense:')){const id=actionName.slice('delete-expense:'.length);if(confirm('Remove this local trip expense?'))await erase('expense',id);}else if(actionName==='import-map-pack')importMapPack();else if(actionName==='import-osm-streets')importOsmStreets();else if(actionName==='import-region-atlas')importRegionAtlas();else if(actionName==='create-region-atlas')createRegionalAtlas();else if(actionName==='verify-region-atlas')await auditSelectedAtlas();else if(actionName==='export-region-atlas')await exportSelectedAtlas();else if(actionName==='download-ph-boundaries')await installCatalogMap();else if(actionName==='export-portable-map'){if(activePack()?.regionAtlas)throw Error('Preserve the original regional atlas JSON file; portable export currently supports only small maps.');await exportPortableMap();}else if(actionName==='import-portable-map')importPortableMap();else if(actionName.startsWith('jump-map-place:')){const p=placeById(actionName.slice('jump-map-place:'.length));if(!p||!Number.isFinite(p.lat)||!Number.isFinite(p.lng))throw Error('Saved destination is not pinned.');const lat=p.lat,lng=p.lng;state.mapFixedBounds={minLat:Math.max(-90,lat-.05),maxLat:Math.min(90,lat+.05),minLng:Math.max(-180,lng-.07),maxLng:Math.min(180,lng+.07)};render();}else if(actionName==='map-fit'){state.mapFixedBounds=null;render();}else if(actionName.startsWith('map-viewport:')){state.mapFixedBounds=moveViewport(state.mapFixedBounds||currentMapBounds(),actionName.slice('map-viewport:'.length));render();}else if(actionName.startsWith('activate-map:')){await setActiveMapPack(state.db,actionName.slice(13),{expectedMapRevision:state.mapRevision});workspaceChannel?.announce('map-selection');state.atlasRequest++;state.atlasView=null;state.atlasLoading=null;state.atlasAudit=null;await refresh();state.mapFixedBounds=null;render();}else if(actionName==='delete-map-pack'){const pack=activePack();if(pack&&confirm(`Remove locally imported map “${pack.name}”? Pins and annotations will remain.`)){const nextActiveId=state.mapPacks.find(p=>p.id!==pack.id)?.id||null;if(pack.regionAtlas)await deleteAtlasRegion(state.db,pack,{expectedMapRevision:state.mapRevision,nextActiveId});else await deleteMapPack(state.db,pack.id,{expectedMapRevision:state.mapRevision,nextActiveId});state.atlasRequest++;state.atlasView=null;state.atlasLoading=null;state.atlasAudit=null;await finishMapChange();state.mapFixedBounds=null;render();}}else if(actionName==='add-place')placeEditor();
@@ -605,10 +953,51 @@ else if(actionName.startsWith('select-day:')){state.chosenDay=actionName.slice(1
 else if(actionName.startsWith('calendar-day:')){state.chosenDay=actionName.slice(13);render();}
 else if(actionName.startsWith('calendar-month:')){state.calendarMonth=actionName.slice(15);render();}
 else if(actionName==='calendar-open-day'){state.tripTab='itinerary';render();}
-else if(actionName.startsWith('move-flex-up:')||actionName.startsWith('move-flex-down:')){const up=actionName.startsWith('move-flex-up:');const id=actionName.slice(up?13:15);const changed=reorderFlexibleStops(state.stops,state.selectedTrip,id,up?-1:1);if(changed.length){await writeLocally(()=>guardedSaveRecords(state.db,'stop',changed,{expectedEpoch:state.workspaceEpoch,expectedRevisionByKey:Object.fromEntries(changed.map(item=>[`stop:${item.id}`,state.recordRevisions[`stop:${item.id}`]??0])),expectedPresenceByKey:Object.fromEntries(changed.map(item=>[`stop:${item.id}`,Boolean(state.recordPresence[`stop:${item.id}`])]))}));toast('Flexible activity order saved locally.');}}else if(actionName==='new-trip')tripEditor();else if(actionName==='edit-trip')tripEditor(selected());else if(actionName==='add-stop')stopEditor();else if(actionName==='add-packing')packingEditor();else if(actionName==='open-trips'){state.tripTab='packing';setNav('trips');}else if(actionName==='assign-trip-vehicle')tripVehicleEditor();else if(actionName==='packing-add-row'){const body=$('#packing-draft-body');if(body){body.insertAdjacentHTML('beforeend',packingDraftRow());body.lastElementChild?.querySelector('input[data-packing-field=label]')?.focus();}}else if(actionName==='packing-save-rows'){await savePackingBatch();}else if(actionName==='packing-template')packingTemplateEditor();else if(actionName==='show-map'){state.mapDraft=null;state.mapFixedBounds=null;state.view='map';render();}else if(actionName.startsWith('start-map:')){const kind=actionName.slice(10);state.mapDraft={kind,points:[]};state.mapFixedBounds=(activePack()?.regionAtlas||activePack()?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(activePack().bounds):mapBounds([...state.places.filter(p=>p.lat!==null),...state.annotations.flatMap(a=>a.points),...(activePack()?.bounds?[{lat:activePack().bounds.minLat,lng:activePack().bounds.minLng},{lat:activePack().bounds.maxLat,lng:activePack().bounds.maxLng}]:[])]);state.view='map';render();}else if(actionName==='cancel-map'){state.mapDraft=null;state.mapFixedBounds=null;render();}else if(actionName==='undo-map'){state.mapDraft?.points.pop();render();}else if(actionName==='finish-map'){if(!state.mapDraft)return;const min=state.mapDraft.kind==='pin'?1:state.mapDraft.kind==='line'?2:3;if(state.mapDraft.points.length<min)throw Error(`Add at least ${min} point(s) before saving.`);annotationEditor();}else if(actionName.startsWith('remove-annotation:')){const id=actionName.slice(18);if(confirm('Remove this local map annotation?'))await erase('annotation',id);}else if(actionName==='verify-offline-shell'){await checkOfflineShell(true);}else if(actionName==='request-persistence'){if(!navigator.storage?.persist)throw Error('Persistent storage is not supported here.');const granted=await navigator.storage.persist();await checkStorage();toast(granted?'Browser granted persistent storage. Keep external backups.':'Persistent storage was not granted. Keep external backups.',!granted);}else if(actionName==='go-explore')setNav('explore');else if(actionName==='today-open-trip'){const t=pickTodayTrip(state.trips,new Date(),state.selectedTrip);state.selectedTrip=t?.id||state.selectedTrip;if(t)state.chosenDay=t.onTrip?t.localDate:t.startDate;state.tripTab='itinerary';setNav('trips');}else if(actionName==='export-backup')await exportBackup();else if(actionName==='import-backup')importBackup();else if(actionName==='undo-restore'){if(!state.recovery)throw Error('No restore recovery is available.');if(!confirm('Swap this workspace with the previous pre-restore snapshot? You can undo this swap if necessary.'))return;const outcome=await undoRestore(state.db,{expectedWorkspaceRevision:state.workspaceRevision});workspaceChannel?.announce('undo-restore');state.selectedTrip=null;state.mapDraft=null;await refresh();render();toast(`Recovered ${outcome.records} local record(s).`);}else if(actionName.startsWith('place:'))placeDetails(actionName.slice(6));else if(actionName.startsWith('annotation:')){const a=state.annotations.find(x=>x.id===actionName.slice(11));if(a)openModal(a.label,`<div class="stack"><p>${esc(a.notes||'No additional notes.')}</p><p class="subtext">${esc(a.kind)} · ${a.points.length} geographic point(s). Not calculated navigation.</p><div class="action-line">${action('Close','close-annotation')}</div></div>`);}else if(actionName==='close-annotation')closeModal();else if(actionName.startsWith('choose-trip:')){state.selectedTrip=actionName.slice(12);state.chosenDay='';state.calendarMonth='';state.tripTab='itinerary';render();}else if(actionName.startsWith('edit-stop:'))stopEditor(state.stops.find(x=>x.id===actionName.slice(10)));else if(actionName.startsWith('delete-stop:')){const id=actionName.slice(12);if(confirm('Remove this itinerary activity?'))await erase('stop',id);}else if(actionName.startsWith('edit-pack:'))packingEditor(state.packing.find(x=>x.id===actionName.slice(10)));else if(actionName.startsWith('delete-pack:')){const id=actionName.slice(12);if(confirm('Remove this packing item?'))await erase('packing',id);}
+else if(actionName.startsWith('move-flex-up:')||actionName.startsWith('move-flex-down:')){const up=actionName.startsWith('move-flex-up:');const id=actionName.slice(up?13:15);const changed=reorderFlexibleStops(state.stops,state.selectedTrip,id,up?-1:1);if(changed.length){await writeLocally(()=>guardedSaveRecords(state.db,'stop',changed,{expectedEpoch:state.workspaceEpoch,expectedRevisionByKey:Object.fromEntries(changed.map(item=>[`stop:${item.id}`,state.recordRevisions[`stop:${item.id}`]??0])),expectedPresenceByKey:Object.fromEntries(changed.map(item=>[`stop:${item.id}`,Boolean(state.recordPresence[`stop:${item.id}`])]))}));toast('Flexible activity order saved locally.');}}else if(actionName==='new-trip')tripEditor();else if(actionName==='edit-trip')tripEditor(selected());else if(actionName==='add-stop')stopEditor();else if(actionName==='add-packing')packingEditor();else if(actionName==='open-trips'){state.tripTab='packing';setNav('trips');}else if(actionName==='assign-trip-vehicle')tripVehicleEditor();else if(actionName==='packing-add-row'){const body=$('#packing-draft-body');if(body){body.insertAdjacentHTML('beforeend',packingDraftRow());body.lastElementChild?.querySelector('input[data-packing-field=label]')?.focus();}}else if(actionName==='packing-save-rows'){await savePackingBatch();}else if(actionName==='packing-template')packingTemplateEditor();else if(actionName==='live-map-fit'){if(!fitLiveMap())toast('Map not ready yet.',true);}else if(actionName==='live-map-pick'){if(!setLiveMapPinMode())toast('Map not ready; use Save place to add coordinates.',true);}else if(actionName.startsWith('live-map-focus:')){if(!focusLiveMap(actionName.slice('live-map-focus:'.length)))toast('Cannot show this pin yet.',true);}else if(actionName==='show-map'){state.mapDraft=null;state.mapFixedBounds=null;state.view='map';render();}else if(actionName.startsWith('start-map:')){const kind=actionName.slice(10);state.mapDraft={kind,points:[]};state.mapFixedBounds=(activePack()?.regionAtlas||activePack()?.dataProfile==='osm-street-reference-v1')?streetReferenceBounds(activePack().bounds):mapBounds([...state.places.filter(p=>p.lat!==null),...state.annotations.flatMap(a=>a.points),...(activePack()?.bounds?[{lat:activePack().bounds.minLat,lng:activePack().bounds.minLng},{lat:activePack().bounds.maxLat,lng:activePack().bounds.maxLng}]:[])]);state.view='map';render();}else if(actionName==='cancel-map'){state.mapDraft=null;state.mapFixedBounds=null;render();}else if(actionName==='undo-map'){state.mapDraft?.points.pop();render();}else if(actionName==='finish-map'){if(!state.mapDraft)return;const min=state.mapDraft.kind==='pin'?1:state.mapDraft.kind==='line'?2:3;if(state.mapDraft.points.length<min)throw Error(`Add at least ${min} point(s) before saving.`);annotationEditor();}else if(actionName.startsWith('remove-annotation:')){const id=actionName.slice(18);if(confirm('Remove this local map annotation?'))await erase('annotation',id);}else if(actionName==='verify-offline-shell'){await checkOfflineShell(true);}else if(actionName==='request-persistence'){if(!navigator.storage?.persist)throw Error('Persistent storage is not supported here.');const granted=await navigator.storage.persist();await checkStorage();toast(granted?'Browser granted persistent storage. Keep external backups.':'Persistent storage was not granted. Keep external backups.',!granted);}else if(actionName==='go-explore')setNav('explore');else if(actionName==='today-open-trip'){const t=pickTodayTrip(state.trips,new Date(),state.selectedTrip);state.selectedTrip=t?.id||state.selectedTrip;if(t)state.chosenDay=t.onTrip?t.localDate:t.startDate;state.tripTab='itinerary';setNav('trips');}else if(actionName==='export-backup')await exportBackup();else if(actionName==='import-backup')importBackup();else if(actionName==='undo-restore'){if(!state.recovery)throw Error('No restore recovery is available.');if(!confirm('Swap this workspace with the previous pre-restore snapshot? You can undo this swap if necessary.'))return;const outcome=await undoRestore(state.db,{expectedWorkspaceRevision:state.workspaceRevision});workspaceChannel?.announce('undo-restore');state.selectedTrip=null;state.mapDraft=null;await refresh();render();toast(`Recovered ${outcome.records} local record(s).`);}else if(actionName.startsWith('place:'))placeDetails(actionName.slice(6));else if(actionName.startsWith('annotation:')){const a=state.annotations.find(x=>x.id===actionName.slice(11));if(a)openModal(a.label,`<div class="stack"><p>${esc(a.notes||'No additional notes.')}</p><p class="subtext">${esc(a.kind)} · ${a.points.length} geographic point(s). Not calculated navigation.</p><div class="action-line">${action('Close','close-annotation')}</div></div>`);}else if(actionName==='close-annotation')closeModal();else if(actionName.startsWith('choose-trip:')){state.selectedTrip=actionName.slice(12);state.chosenDay='';state.calendarMonth='';state.tripTab='itinerary';render();}else if(actionName.startsWith('edit-stop:'))stopEditor(state.stops.find(x=>x.id===actionName.slice(10)));else if(actionName.startsWith('delete-stop:')){const id=actionName.slice(12);if(state.stops.some(x=>x.predecessorId===id))throw Error('Remove this activity from its successors first.');if(confirm('Remove this itinerary activity?'))await erase('stop',id);}else if(actionName.startsWith('edit-pack:'))packingEditor(state.packing.find(x=>x.id===actionName.slice(10)));else if(actionName.startsWith('delete-pack:')){const id=actionName.slice(12);if(confirm('Remove this packing item?'))await erase('packing',id);}
 }catch(err){toast(err.message||'Action failed',true);}}
-async function init(){try{state.db=await openDatabase(warnVersionChange);await refresh();workspaceChannel=createWorkspaceCoordinator({onChange:()=>scheduleExternalRefresh()});window.addEventListener('focus',scheduleExternalRefresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleExternalRefresh();});const v=new URL(location.href).searchParams.get('view');if(['explore','map','trips','today','photos','more'].includes(v))state.view=v;else if(v==='packing'){state.view='trips';state.tripTab='packing';}render();$('#side-nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)setNav(b.dataset.view);});$('#mobile-nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)setNav(b.dataset.view);});$('#quick-save').addEventListener('click',()=>placeEditor());$('#today-shortcut').addEventListener('click',()=>setNav('today'));$('#modal-close').addEventListener('click',()=>closeModal());$('#modal-backdrop').addEventListener('click',e=>{if(e.target.id==='modal-backdrop')closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal-backdrop').classList.contains('hidden'))closeModal();});$('#main').addEventListener('click',e=>{const target=e.target.closest('[data-action]');if(target)handler(target);else if(state.mapDraft&&e.target.closest('#geo-canvas')){const svg=e.target.closest('#geo-canvas');const p=mapClickToGeo(svg,e);if(!p)return;if(state.mapDraft.kind==='pin')state.mapDraft.points=[p];else if(state.mapDraft.points.length<200)state.mapDraft.points.push(p);render();}});$('#main').addEventListener('change',async e=>{if(e.target.id==='category-filter'){state.category=e.target.value;render();}else if(e.target.id==='trip-day'){state.chosenDay=e.target.value;render();}else if(e.target.dataset.packId){await handlePackingChange(e.target);}});$('#main').addEventListener('input',e=>{if(e.target.id==='explore-search'){const cursor=e.target.selectionStart;state.search=e.target.value;render();const inp=$('#explore-search');inp.focus();inp.setSelectionRange(cursor,cursor);}});$('#main').addEventListener('click',e=>{const b=e.target.closest('[data-trip-tab]');if(b){state.tripTab=b.dataset.tripTab;render();return;}const f=e.target.closest('[data-stage-filter]');if(f){state.stageFilter=f.dataset.stageFilter;render();}});window.addEventListener('online',colorStatus);window.addEventListener('offline',colorStatus);checkStorage();void checkOfflineShell();navigator.serviceWorker?.addEventListener('controllerchange',()=>{void checkOfflineShell();});state.shellCached=false;
+async function init(){try{state.db=await openDatabase(warnVersionChange);await refresh();workspaceChannel=createWorkspaceCoordinator({onChange:()=>scheduleExternalRefresh()});window.addEventListener('focus',scheduleExternalRefresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleExternalRefresh();});const v=new URL(location.href).searchParams.get('view');if(['explore','map','trips','today','photos','more'].includes(v))state.view=v;else if(v==='packing'){state.view='trips';state.tripTab='packing';}render();$('#side-nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)setNav(b.dataset.view);});$('#mobile-nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)setNav(b.dataset.view);});$('#quick-save').addEventListener('click',()=>placeEditor());$('#today-shortcut').addEventListener('click',()=>setNav('today'));$('#modal-close').addEventListener('click',()=>closeModal());$('#modal-backdrop').addEventListener('click',e=>{if(e.target.id==='modal-backdrop')closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal-backdrop').classList.contains('hidden'))closeModal();});$('#main').addEventListener('click',e=>{const target=e.target.closest('[data-action]');if(target)handler(target);else if(state.mapDraft&&e.target.closest('#geo-canvas')){const svg=e.target.closest('#geo-canvas');const p=mapClickToGeo(svg,e);if(!p)return;if(state.mapDraft.kind==='pin')state.mapDraft.points=[p];else if(state.mapDraft.points.length<200)state.mapDraft.points.push(p);render();}});$('#main').addEventListener('change',async e=>{if(e.target.matches('[data-place-cover-id]')){await saveQuickPlaceCover(e.target);return;}if(e.target.id==='category-filter'){state.category=e.target.value;render();}else if(e.target.id==='trip-day'){state.chosenDay=e.target.value;render();}else if(e.target.dataset.packId){await handlePackingChange(e.target);}});$('#main').addEventListener('input',e=>{if(e.target.id==='explore-search'){const cursor=e.target.selectionStart;state.search=e.target.value;render();const inp=$('#explore-search');inp.focus();inp.setSelectionRange(cursor,cursor);}});$('#main').addEventListener('click',e=>{const b=e.target.closest('[data-trip-tab]');if(b){state.tripTab=b.dataset.tripTab;render();return;}const f=e.target.closest('[data-stage-filter]');if(f){state.stageFilter=f.dataset.stageFilter;render();}});window.addEventListener('online',colorStatus);window.addEventListener('offline',colorStatus);checkStorage();void checkOfflineShell();navigator.serviceWorker?.addEventListener('controllerchange',()=>{void checkOfflineShell();});state.shellCached=false;
     const params=new URLSearchParams(location.search),sourceText=params.get('text')||'',sourceUrl=params.get('url')||(sourceText.match(/https?:\/\/\S+/)?.[0]||'');if(sourceUrl||params.get('title')){placeEditor(null,{url:sourceUrl,title:params.get('title')||'',notes:sourceText.replace(sourceUrl,'').trim()});}
     if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>checkOfflineShell().catch(()=>{})).catch(()=>toast('Offline shell could not be installed; local records still work.',true));}
   }catch(err){$('#main').innerHTML=`<div class="alert red"><strong>TravelIt could not open local storage.</strong><p>${esc(err.message)}</p><p>Do not clear browser data before recovering any existing content.</p></div>`;console.error(err);}}
+
+/* RC2 visual shell: per-browser preferences only. No changes to trip IndexedDB. */
+function installTravelItWorkspaceChrome(){
+ const KEY='travelit_ui_preferences_v1',shell=document.getElementById('app');
+ const sidebar=document.getElementById('sidebar-toggle'),theme=document.getElementById('theme-toggle');
+ const scrim=document.getElementById('sidebar-scrim');
+ let prefs={theme:document.documentElement.dataset.theme==='light'?'light':'dark',sidebar:'expanded'},drawer=false;
+ try{
+   const value=JSON.parse(localStorage.getItem(KEY)||'null');
+   if(value&&typeof value==='object'&&!Array.isArray(value)){
+     if(['light','dark'].includes(value.theme))prefs.theme=value.theme;
+     if(['expanded','compact','hidden'].includes(value.sidebar))prefs.sidebar=value.sidebar;
+   }
+ }catch{}
+ const mobile=()=>window.matchMedia('(max-width:720px)').matches;
+ const paint=()=>{
+   document.documentElement.dataset.theme=prefs.theme;
+   document.documentElement.style.colorScheme=prefs.theme;
+   shell.dataset.sidebar=mobile()?(drawer?'drawer':prefs.sidebar):prefs.sidebar;
+   sidebar.setAttribute('aria-expanded',String(mobile()?drawer:prefs.sidebar!=='hidden'));
+   sidebar.setAttribute('aria-label',mobile()?(drawer?'Close navigation':'Open navigation'):'Navigation: '+prefs.sidebar+'. Change width');
+   theme.setAttribute('aria-label','Switch to '+(prefs.theme==='dark'?'light':'dark')+' appearance');
+   theme.textContent=prefs.theme==='dark'?'☼':'☾';
+   document.querySelector('meta[name="theme-color"]')?.setAttribute('content',prefs.theme==='dark'?'#142331':'#133148');
+ };
+ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(prefs));}catch{}};
+ const closeDrawer=()=>{if(drawer){drawer=false;paint();}};
+ sidebar.addEventListener('click',()=>{
+   if(mobile())drawer=!drawer;
+   else {prefs.sidebar=prefs.sidebar==='expanded'?'compact':prefs.sidebar==='compact'?'hidden':'expanded';save();}
+   paint();
+ });
+ theme.addEventListener('click',()=>{prefs.theme=prefs.theme==='dark'?'light':'dark';save();paint();});
+ scrim.addEventListener('click',closeDrawer);
+ document.getElementById('side-nav').addEventListener('click',e=>{if(e.target.closest('[data-view]'))closeDrawer();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+ window.addEventListener('resize',()=>{if(!mobile())drawer=false;paint();});
+ paint();
+}
+installTravelItWorkspaceChrome();
+
 init();

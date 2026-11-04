@@ -5,9 +5,8 @@ on:
       - 'js/**'
       - 'css/**'
       - 'index.html'
-      - 'tests/editorial-b2.browser.mjs'
-      - 'tests/consumer-b3.browser.mjs'
-      - 'tests/planning-b4.browser.mjs'
+      - 'tests/*.browser.mjs'
+      - 'sw.js'
       - '.github/workflows/b2-browser.yml'
 jobs:
   browser:
@@ -23,8 +22,28 @@ jobs:
         run: |
           npm install --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
-      - name: Run browser acceptance test
+      - name: Fetch deployed B4 baseline for same-origin upgrade regression
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - name: Run all browser acceptance suites (automatically discovered)
+        shell: bash
         run: |
-          node tests/editorial-b2.browser.mjs
-          node tests/consumer-b3.browser.mjs
-          node tests/planning-b4.browser.mjs
+          set -euo pipefail
+          suites=(tests/*.browser.mjs)
+          if [[ ! -f "${suites[0]}" ]]; then
+            echo "::error::No browser acceptance tests found"
+            exit 1
+          fi
+          echo "Running ${#suites[@]} browser acceptance suites"
+          for suite in "${suites[@]}"; do
+            echo "::group::${suite}"
+            node "${suite}"
+            echo "::endgroup::"
+          done
+      - name: Save synthetic visual review screenshots
+        if: always() && startsWith(github.head_ref, 'release/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: travelit-rc1-visual-review
+          path: artifacts/visual/*.png
+          if-no-files-found: warn
+          retention-days: 7

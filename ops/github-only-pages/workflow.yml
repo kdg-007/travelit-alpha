@@ -1,0 +1,45 @@
+name: TravelIt RC1 isolated GitHub Pages QA
+# Install this template ONLY in a separately owned GitHub organization
+# site repo named <organization>.github.io. It is inert in TravelIt.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages-qa
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Get exact reviewed TravelIt release-candidate source
+        uses: actions/checkout@v4
+        with:
+          repository: kdg-007/travelit-alpha
+          ref: 1015c9187ddfd89f529adff7dab54b289120dbb2
+          persist-credentials: false
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assemble isolated test-only app
+        run: node scripts/build-rc1-preview.mjs
+      - name: Verify sealed preview before publication
+        run: node scripts/preview-integrity.mjs artifacts/rc1-preview
+      - name: Prepare GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload only isolated preview files
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/rc1-preview
+      - name: Publish to the separate organization origin
+        id: deployment
+        uses: actions/deploy-pages@v4

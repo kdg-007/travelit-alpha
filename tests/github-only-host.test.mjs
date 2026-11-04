@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+const read=p=>readFileSync(fileURLToPath(new URL('../'+p,import.meta.url)),'utf8');
+test('GitHub-only QA Pages workflow is inert, manually approved and source-SHA pinned',()=>{
+ const y=read('ops/github-only-pages/workflow.yml');
+ assert.match(y,/workflow_dispatch:/);
+ assert.doesNotMatch(y,/\n\s+push:/);
+ assert.doesNotMatch(y,/\n\s+pull_request:/);
+ assert.match(y,/repository: kdg-007\/travelit-alpha/);
+ assert.match(y,/ref: [0-9a-f]{40}/);
+ assert.match(y,/persist-credentials: false/);
+ assert.match(y,/pages: write/);
+ assert.match(y,/id-token: write/);
+ assert.match(y,/node scripts\/build-rc1-preview\.mjs/);
+ assert.match(y,/node scripts\/preview-integrity\.mjs artifacts\/rc1-preview/);
+ assert.match(y,/path: artifacts\/rc1-preview/);
+ assert.match(y,/actions\/deploy-pages@v4/);
+ assert.doesNotMatch(y,/secrets\./);
+ assert.doesNotMatch(y,/kdg-007\.github\.io/);
+ assert.doesNotMatch(y,/cloudflare/i);
+});
+test('GitHub-only organization guide preserves distinct-origin and production controls',()=>{
+ const text=read('docs/RC1_STABLE_HOSTING_READINESS.md');
+ assert.match(text,/GitHub only/);
+ assert.match(text,/free GitHub organization/);
+ assert.match(text,/draft PR #16 remains unmerged/);
+ assert.match(text,/not the browser origin/);
+ assert.match(read('ops/github-only-pages/README.md'),/public.*Pages/i);
+});

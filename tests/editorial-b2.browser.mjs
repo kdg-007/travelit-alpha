@@ -15,12 +15,17 @@ page.on('pageerror',e=>errors.push(e.message));
 try{
  await waitForServer();
  await page.goto(url,{waitUntil:'networkidle'});
+ await page.waitForTimeout(300);
+ if(await page.locator('[data-view="trips"]').count()===0){
+  throw Error('TravelIt failed bootstrap: '+JSON.stringify(errors)+' / '+String(await page.locator('#main').textContent()).slice(0,400));
+ }
  await page.locator('[data-view="trips"]').last().click();
  await page.locator('[data-action="new-trip"]').first().click();
  await page.locator('#f-title').fill('Synthetic B2 Trip');
  await page.locator('#f-startDate').fill('2026-12-05');
  await page.locator('#f-endDate').fill('2026-12-07');
  await page.locator('#modal-form button[type=submit]').click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  await page.locator('.itinerary-table').waitFor();
  assert.equal(await page.locator('.itinerary-table tbody tr').count(),2);
  for(const [i,title,time] of [[0,'Breakfast','08:00'],[1,'Walk on beach','10:00']]){
@@ -39,11 +44,12 @@ try{
  await page.screenshot({path:'/tmp/travelit-b2-image.png'});
  await page.locator('#place-cover-file').setInputFiles('/tmp/travelit-b2-image.png');
  await page.locator('#modal-form button[type=submit]').click();
- await page.locator('.story-cover img').first().waitFor({timeout:12000});
+ await page.locator('.explore-feature-photo img, .story-cover img').first().waitFor({timeout:12000});
  await page.locator('[data-view="photos"]').last().click();
  assert.equal(await page.locator('.photo-story img').count(),1);
  await page.reload({waitUntil:'networkidle'});
  await page.locator('[data-view="trips"]').last().click();
+ await page.locator('[data-action="itinerary-mode:table"]').click();
  assert.equal(await page.locator('.itinerary-table tr[data-stop-id]:not([data-stop-id=""])').count(),2,'persistent stops');
  await page.locator('[data-view="more"]').last().click();
  const downloadPromise=page.waitForEvent('download');
@@ -51,7 +57,7 @@ try{
  const download=await downloadPromise;
  const bytes=readFileSync(await download.path());
  const backup=JSON.parse(bytes.toString('utf8'));
- assert.equal(backup.schemaVersion,5);
+ assert.equal(backup.schemaVersion,7);
  assert.equal(backup.records.filter(x=>x.type==='stop').length,2);
  assert.equal(backup.records.filter(x=>x.type==='place').length,1);
  assert.ok(backup.records.find(x=>x.type==='place').data.coverImage.startsWith('data:image/jpeg;base64,'));

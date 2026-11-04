@@ -1,11 +1,14 @@
 import {normalizeKeepItAssociation,logicalAssociationKey} from './keepit-associations.js';
 import {normalizeVehicle,normalizeExpense,normalizeLeg} from './trip-costs.js';
 import {DISCOVERY_STAGES} from './travel-planning.js';
-export const SCHEMA_VERSION = 5;
+import {dependencyOrder} from './trip-dependencies.js';
+import {normalizeLocalNote} from './local-notes.js';
+import {normalizePhoto} from './photo-stories.js';
+export const SCHEMA_VERSION = 7;
 export const PLACE_CATEGORIES = ['Destination','Restaurant','Hotel','Beach','Attraction','Other'];
 export const STOP_KINDS = ['Activity','Travel','Meal','Hotel','Other'];
 export const PACK_CATEGORIES = ['Essentials','Clothing','Personal care','Electronics','Family','Other'];
-export const VALID_TYPES = ['place','trip','stop','packing','annotation','vehicle','expense','keepitAssociation'];
+export const VALID_TYPES = ['place','trip','stop','packing','annotation','vehicle','expense','keepitAssociation','note','photo'];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 export const cleanText = (v, max=280) => String(v ?? '').trim().slice(0,max);
 export function validCoords(lat,lng){const valid=v=>(typeof v==='number'&&Number.isFinite(v))||(typeof v==='string'&&/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(v.trim()));return valid(lat)&&valid(lng)&&Number(lat)>=-90&&Number(lat)<=90&&Number(lng)>=-180&&Number(lng)<=180;}
@@ -40,13 +43,17 @@ export function normalizeStop(input,trip,now=new Date().toISOString()){
   if(!Number.isInteger(duration)||duration<0||duration>10080) throw Error('Duration must be 0–10080 minutes.');
   const sortOrder=input.sortOrder===undefined||input.sortOrder===null?1000000:Number(input.sortOrder);
   if(!Number.isInteger(sortOrder)||sortOrder<0||sortOrder>100000000) throw Error('Invalid itinerary order.');
-  return {id:input.id||uid(),tripId:trip.id,placeId:input.placeId||null,title,date,time,durationMinutes:duration,kind:STOP_KINDS.includes(input.kind)?input.kind:'Activity',fixed:!!input.fixed,sortOrder,notes:cleanText(input.notes,2000),...normalizeLeg(input),createdAt:input.createdAt||now,updatedAt:now};
+  const predecessorId=String(input.predecessorId||'').trim()||null;
+  if(predecessorId&&predecessorId.length>120)throw Error('Predecessor reference too long.');
+  const lagMinutes=Number(input.lagMinutes??0);
+  if(!Number.isInteger(lagMinutes)||lagMinutes<0||lagMinutes>1440)throw Error('Buffer after predecessor must be 0–1440 minutes.');
+  return {id:input.id||uid(),tripId:trip.id,placeId:input.placeId||null,title,date,time,durationMinutes:duration,kind:STOP_KINDS.includes(input.kind)?input.kind:'Activity',fixed:!!input.fixed,sortOrder,predecessorId,lagMinutes,notes:cleanText(input.notes,2000),...normalizeLeg(input),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function normalizePacking(input,trip,now=new Date().toISOString()){
   const label=cleanText(input.label,150),qty=Number(input.quantity??1);
   if(!label) throw Error('Packing item name is required.');
   if(!Number.isInteger(qty)||qty<1||qty>999) throw Error('Quantity must be 1–999.');
-  return {id:input.id||uid(),tripId:trip.id,label,category:PACK_CATEGORIES.includes(input.category)?input.category:'Other',quantity:qty,packed:!!input.packed,owner:cleanText(input.owner,80),createdAt:input.createdAt||now,updatedAt:now};
+  return {id:input.id||uid(),tripId:trip.id,label,category:PACK_CATEGORIES.includes(input.category)?input.category:'Other',group:cleanText(input.group,70),quantity:qty,packed:!!input.packed,owner:cleanText(input.owner,80),createdAt:input.createdAt||now,updatedAt:now};
 }
 export function wazeUrl(place){if(place?.lat===null||place?.lng===null||!validCoords(place?.lat,place?.lng)) return null;return `https://waze.com/ul?ll=${encodeURIComponent(place.lat+','+place.lng)}&navigate=yes`;}
 export function tripDateAt(date,timezone='Asia/Manila'){
@@ -60,7 +67,7 @@ export function conflicts(stops){
   return result;
 }
 export function validateBackup(data){
-  if(!data || data.format!=='travelit-local-backup' || ![1,2,3,4,SCHEMA_VERSION].includes(data.schemaVersion) || !Array.isArray(data.records) || !Array.isArray(data.outbox)) throw Error('Not a supported TravelIt backup.');
+  if(!data || data.format!=='travelit-local-backup' || ![1,2,3,4,5,6,SCHEMA_VERSION].includes(data.schemaVersion) || !Array.isArray(data.records) || !Array.isArray(data.outbox)) throw Error('Not a supported TravelIt backup.');
   if(data.records.length>150000||data.outbox.length>300000) throw Error('Backup exceeds safety limits.');
   const ids=new Set(),associationKeys=new Set();
   const tripMap=new Map(data.records.filter(r=>r?.type==='trip'&&r.data).map(r=>[r.id,r.data]));
@@ -69,9 +76,13 @@ export function validateBackup(data){
     if(!r||!VALID_TYPES.includes(r.type)||typeof r.id!=='string'||!r.id||r.key!==`${r.type}:${r.id}`||!r.data||r.data.id!==r.id||typeof r.data.updatedAt!=='string')throw Error('Backup contains an invalid record.');
     if(data.schemaVersion<3&&['vehicle','expense'].includes(r.type))throw Error('Legacy backup cannot contain new financial records.');
     if(data.schemaVersion<5&&r.type==='keepitAssociation')throw Error('Older backup cannot contain KeepIt associations.');
+    if(data.schemaVersion<6&&r.type==='note')throw Error('Older backup cannot contain native local notes.');
+    if(data.schemaVersion<7&&r.type==='photo')throw Error('Older backup cannot contain native local photos.');
     if(data.schemaVersion<4&&r.type==='place'&&r.data.stage!==undefined)throw Error('Older backup cannot contain discovery stage.');
     const key=r.type+':'+r.id;if(ids.has(key))throw Error('Duplicate record found.');ids.add(key);
     try{
+      if(r.type==='note')normalizeLocalNote(r.data);
+      if(r.type==='photo')normalizePhoto(r.data);
       if(r.type==='keepitAssociation'){const assoc=normalizeKeepItAssociation(r.data);const logical=logicalAssociationKey(assoc);if(associationKeys.has(logical))throw Error('Duplicate logical note association');associationKeys.add(logical);}
       if(r.type==='place')normalizePlace(r.data);
       if(r.type==='trip'){normalizeTrip(r.data);if(r.data.vehicleId&&!vehicleMap.has(r.data.vehicleId))throw Error('Vehicle reference missing');}
@@ -82,6 +93,7 @@ export function validateBackup(data){
       if(r.type==='annotation'){if(data.schemaVersion===1)throw Error('Legacy backup cannot contain annotations.');const a=r.data;if(!['pin','line','area'].includes(a.kind)||!Array.isArray(a.points)||!a.label||a.points.length>(200)||a.points.length<(a.kind==='pin'?1:a.kind==='line'?2:3)||(a.kind==='pin'&&a.points.length!==1)||a.points.some(p=>!validCoords(p.lat,p.lng)))throw Error('Invalid map annotation');if(a.tripId&&!tripMap.has(a.tripId))throw Error('Annotation trip reference missing');}
     }catch{throw Error(`Backup record is invalid: ${r.type}`);}
   }
+  for(const trip of tripMap.values())dependencyOrder(data.records.filter(r=>r?.type==='stop').map(r=>r.data),trip.id);
   const cmds=new Set();for(const o of data.outbox){
     if(!o||typeof o.commandId!=='string'||!o.commandId||cmds.has(o.commandId)||!VALID_TYPES.includes(o.entityType)||typeof o.entityId!=='string'||!['upsert','delete'].includes(o.verb)||o.state!=='LOCAL_ONLY_ADAPTER_NOT_CONNECTED')throw Error('Backup contains invalid command history.');
     cmds.add(o.commandId);

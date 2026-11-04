@@ -1,4 +1,11 @@
 import {SCHEMA_VERSION,validateBackup} from './domain.js';
+// Keep import bounded on mobile, while permitting full compressed photo collections.
+export const MAX_BACKUP_IMPORT_BYTES=64*1024*1024;
+export function assertBackupFileSize(bytes){
+  if(!Number.isSafeInteger(bytes)||bytes<0)throw Error('Invalid backup file size.');
+  if(bytes>MAX_BACKUP_IMPORT_BYTES)throw Error('Backup exceeds this device import safety limit (64 MiB). Keep the original file; use a smaller TravelIt collection or a device with greater capacity.');
+  return true;
+}
 const payload=b=>JSON.stringify({format:b.format,schemaVersion:b.schemaVersion,records:b.records,outbox:b.outbox});
 async function checksum(text){if(!globalThis.crypto?.subtle)throw Error('Secure Web Crypto unavailable; cannot verify backup integrity.');const bytes=new TextEncoder().encode(text);const digest=await globalThis.crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');}
 export async function createBackup(data,now=new Date().toISOString()){

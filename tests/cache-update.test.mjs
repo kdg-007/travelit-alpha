@@ -15,7 +15,8 @@ test('versioned main assets bypass a previously installed cache-first worker',()
  assert.match(sw,new RegExp(style[1].replace(/[.*+?^$\{\}()|[\]\\]/g,'\\$&')));
 });
 test('new worker finishes precaching before taking control',()=>{
- assert.match(sw,/c\.addAll\(SHELL\)\)\.then\(\(\)=>self\.skipWaiting\(\)\)/);
+ assert.match(sw,/c\.addAll\(SHELL\.map\(path=>new Request\(path,\{cache:'reload'\}\)\)\)/);
+ assert.match(sw,/\.then\(\(\)=>self\.skipWaiting\(\)\)/);
  assert.match(sw,/await self\.clients\.claim\(\)/);
 });
 test('worker update does not clear IndexedDB or delete personal browser storage',()=>{
@@ -24,4 +25,8 @@ test('worker update does not clear IndexedDB or delete personal browser storage'
 test('the updated app still contains the intended B1 Photos navigation',()=>{
  assert.match(app,/\['photos','Photos'/);
  assert.doesNotMatch(app,/\['packing','Packing','✓'/);
+});
+
+test('new cache refuses stale module responses from browser HTTP cache',()=>{
+ assert.match(sw,/new Request\(path,\{cache:'reload'\}\)/);
 });
