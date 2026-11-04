@@ -68,12 +68,15 @@ try{
   }catch{return false;}
  },newName,{timeout:35000});
  // Precaching must fetch CURRENT bytes even if the HTTP cache has stale B4 modules.
- const moduleContents=await page.evaluate(async cacheName=>{
+ const moduleCheck=await page.evaluate(async cacheName=>{
   const cache=await caches.open(cacheName);
-  const found=await cache.match(new URL('./js/backup.js',location.href).href);
-  return found?.text()||'';
+  const url=new URL('./js/backup.js',location.href).href;
+  const items=(await cache.keys()).map(x=>x.url);
+  const found=await cache.match(url);
+  const text=await found?.text()||'';
+  return {url,items,matched:Boolean(found),newModule:text.includes('MAX_BACKUP_IMPORT_BYTES'),moduleStart:text.slice(0,220),cacheNames:await caches.keys()};
  },newName);
- assert.match(moduleContents,/export const MAX_BACKUP_IMPORT_BYTES/, 'New worker cached an obsolete B4 module');
+ assert.ok(moduleCheck.newModule,'New worker did not cache current RC1 backup module: '+JSON.stringify(moduleCheck));
  await page.reload({waitUntil:'domcontentloaded'});
  try{
   await page.locator('[data-view="trips"]').last().waitFor({timeout:12000});
