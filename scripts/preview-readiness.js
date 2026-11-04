@@ -26,6 +26,18 @@ export async function collectPreviewReadiness(){
  }catch{checks.push(check('keepit','KeepIt safety boundary','hold','Unable to verify disconnected mode.'));}
  return {origin:location.origin,checks};
 }
+const checklistKey='travelit-rc1-preview-manual-checks-v1';
+function loadManual(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(checklistKey)||'{}');
+  document.querySelectorAll('[data-accept]').forEach(x=>{x.checked=saved[x.dataset.accept]===true;});
+ }catch{/* Browser storage may be disabled; checkboxes still work without persistence. */}
+}
+function persistManual(){
+ try{localStorage.setItem(checklistKey,JSON.stringify(Object.fromEntries(
+  [...document.querySelectorAll('[data-accept]')].map(x=>[x.dataset.accept,x.checked])
+ )));}catch{/* Read-only manual report still works. */}
+}
 let state=null;
 function summary(){
  return {format:'travelit-rc1-preview-acceptance-v1',origin:state?.origin||location.origin,
@@ -50,7 +62,12 @@ if(location.hostname.toLowerCase()===liveHost){
  document.body.replaceChildren(document.createTextNode('Blocked: preview checks cannot run on the existing GitHub Pages origin.'));
 }else{
  document.querySelector('#run-checks').addEventListener('click',refresh);
- document.querySelectorAll('[data-accept]').forEach(x=>x.addEventListener('change',updateReport));
+ loadManual();
+ document.querySelectorAll('[data-accept]').forEach(x=>x.addEventListener('change',()=>{persistManual();updateReport();}));
+ document.querySelector('#reset-acceptance').addEventListener('click',()=>{
+  document.querySelectorAll('[data-accept]').forEach(x=>{x.checked=false;});
+  persistManual();updateReport();
+ });
  document.querySelector('#copy-report').addEventListener('click',async()=>{
   const field=document.querySelector('#report-json');
   try{await navigator.clipboard.writeText(field.value);document.querySelector('#copy-status').textContent='Copied.';}

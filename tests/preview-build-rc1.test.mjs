@@ -27,6 +27,7 @@ test('RC1 preview package is visibly distinct and cannot open the production Ind
   const assets=JSON.parse(header[2]);
   assert.ok(assets.includes('./js/preview-bootstrap.js'));
   assert.ok(assets.includes('./qa.html'));
+  assert.match(sw,/caches\.match\(event\.request,\{ignoreSearch:true\}\)/,'Offline QA navigation must serve cached diagnostic page');
   assert.ok(assets.includes('./js/preview-readiness.js'));
   assert.match(offline,/travelit-rc1-preview-shell-/);
   assert.match(offline,/\.\/js\/preview-bootstrap\.js/);

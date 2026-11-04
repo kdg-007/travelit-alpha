@@ -41,6 +41,10 @@ export function buildRc1Preview({
  assets.push('./js/preview-bootstrap.js','./qa.html','./js/preview-readiness.js');
  sw=sw.replace(header[0],"const CACHE='"+cache+"';const SHELL="+JSON.stringify(assets)+";");
  sw=sw.replaceAll("key.startsWith('travelit-foundation-shell-')","key.startsWith('travelit-rc1-preview-shell-')");
+ const oldNavigation="fetch(event.request).catch(()=>caches.match('./index.html'))";
+ if(!sw.includes(oldNavigation))throw Error('Preview navigation fallback anchor changed.');
+ // Only the TEST PREVIEW uses a cached diagnostic page when offline.
+ sw=sw.replace(oldNavigation,"fetch(event.request).catch(async()=>await caches.match(event.request,{ignoreSearch:true})||await caches.match('./index.html'))");
  save('sw.js',sw);
 
  let verifier=load('js/offline-shell.js');

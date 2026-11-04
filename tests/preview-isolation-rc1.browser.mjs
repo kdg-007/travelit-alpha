@@ -63,6 +63,9 @@ try{
  await context.setOffline(true);
  await page.reload({waitUntil:'domcontentloaded'});
  await page.locator('#automatic-checks [data-check="offline"][data-status="pass"]').waitFor();
+ assert.equal(await page.locator('[data-accept="standalone"]').isChecked(),true,'Manual acceptance state should persist locally');
+ await page.locator('#reset-acceptance').click();
+ assert.equal(await page.locator('[data-accept="standalone"]').isChecked(),false,'Reset clears synthetic acceptance flags');
  await page.goto(url,{waitUntil:'domcontentloaded'});
  await page.locator('[data-view="trips"]:visible').first().click();
  await page.getByText('Synthetic preview journey').first().waitFor();
