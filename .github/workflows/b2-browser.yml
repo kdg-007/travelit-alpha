@@ -23,7 +23,6 @@ jobs:
           npm install --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
       - name: Fetch deployed B4 baseline for same-origin upgrade regression
-        if: startsWith(github.head_ref, 'release/')
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - name: Run all browser acceptance suites (automatically discovered)
         shell: bash
