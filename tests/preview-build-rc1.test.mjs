@@ -26,6 +26,8 @@ test('RC1 preview package is visibly distinct and cannot open the production Ind
   assert.equal(header[1],result.cache);
   const assets=JSON.parse(header[2]);
   assert.ok(assets.includes('./js/preview-bootstrap.js'));
+  assert.ok(assets.includes('./qa.html'));
+  assert.ok(assets.includes('./js/preview-readiness.js'));
   assert.match(offline,/travelit-rc1-preview-shell-/);
   assert.match(offline,/\.\/js\/preview-bootstrap\.js/);
   const html=read('index.html'),bootstrap=read('js/preview-bootstrap.js');
@@ -40,5 +42,8 @@ test('RC1 preview package is visibly distinct and cannot open the production Ind
   assert.match(JSON.parse(read('manifest.webmanifest')).short_name,/Test/);
   assert.ok(existsSync(join(result.outputDir,'icons/icon.svg')));
   assert.ok(existsSync(join(result.outputDir,'PREVIEW_README.md')));
+  assert.match(read('qa.html'),/iPhone acceptance checklist/);
+  assert.match(read('index.html'),/Device checklist/);
+  assert.match(read('js/preview-readiness.js'),/collectPreviewReadiness/);
  }finally{rmSync(temp,{force:true,recursive:true});}
 });

@@ -50,8 +50,20 @@ try{
  assert.ok(cacheKeys.includes(result.cache),'Preview shell cache not installed');
  assert.ok(!cacheKeys.some(x=>x.startsWith('travelit-foundation-shell-')),'Production cache must never be created');
 
+ await page.locator('.preview-qa-link').click();
+ await page.locator('#automatic-checks [data-check="storage"][data-status="pass"]').waitFor();
+ await page.locator('#automatic-checks [data-check="offline"][data-status="pass"]').waitFor();
+ await page.locator('#automatic-checks [data-check="keepit"][data-status="pass"]').waitFor();
+ assert.equal(await page.locator('[data-accept]').count(),6);
+ await page.locator('[data-accept="standalone"]').check();
+ const report=JSON.parse(await page.locator('#report-json').inputValue());
+ assert.equal(report.manual.find(x=>x.id==='standalone').checked,true);
+ assert.equal(report.automatic.find(x=>x.id==='keepit').status,'pass');
+ assert.ok(!JSON.stringify(report).includes('Synthetic preview journey'),'QA report must exclude trip content');
  await context.setOffline(true);
  await page.reload({waitUntil:'domcontentloaded'});
+ await page.locator('#automatic-checks [data-check="offline"][data-status="pass"]').waitFor();
+ await page.goto(url,{waitUntil:'domcontentloaded'});
  await page.locator('[data-view="trips"]:visible').first().click();
  await page.getByText('Synthetic preview journey').first().waitFor();
  assert.equal(faults.length,0,'Page errors: '+faults.join('; '));

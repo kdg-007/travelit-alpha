@@ -19,6 +19,8 @@ export function buildRc1Preview({
  mkdirSync(outputDir,{recursive:true});
  for(const directory of ['js','css','icons'])cpSync(join(rootDir,directory),join(outputDir,directory),{recursive:true});
  for(const name of ['index.html','sw.js','manifest.webmanifest'])cpSync(join(rootDir,name),join(outputDir,name));
+ cpSync(join(rootDir,'scripts/preview-qa.html'),join(outputDir,'qa.html'));
+ cpSync(join(rootDir,'scripts/preview-readiness.js'),join(outputDir,'js/preview-readiness.js'));
 
  let db=load('js/db.js');
  if(!db.includes("const NAME='travelit-foundation'"))throw Error('Unexpected production database declaration.');
@@ -36,7 +38,7 @@ export function buildRc1Preview({
  const cache='travelit-rc1-preview-shell-'+header[1].slice('travelit-foundation-shell-'.length);
  const assets=JSON.parse(header[2]);
  if(!assets.includes('./js/app.js'))throw Error('Main module is not in the shell cache.');
- assets.push('./js/preview-bootstrap.js');
+ assets.push('./js/preview-bootstrap.js','./qa.html','./js/preview-readiness.js');
  sw=sw.replace(header[0],"const CACHE='"+cache+"';const SHELL="+JSON.stringify(assets)+";");
  sw=sw.replaceAll("key.startsWith('travelit-foundation-shell-')","key.startsWith('travelit-rc1-preview-shell-')");
  save('sw.js',sw);
@@ -54,7 +56,7 @@ export function buildRc1Preview({
  const entry='./'+match[1].slice(3);
  html=html.replace(match[0],'<script type="module" src="js/preview-bootstrap.js"></script>');
  html=html.replace('<title>TravelIt — Your journeys</title>','<title>TravelIt RC1 Preview — Test Only</title>');
- html=html.replace('<h1 id="page-heading">Explore</h1>','<h1 id="page-heading">Explore</h1><span class="preview-flag">RC1 PREVIEW · TEST DATA ONLY</span>');
+ html=html.replace('<h1 id="page-heading">Explore</h1>','<h1 id="page-heading">Explore</h1><span class="preview-flag">RC1 PREVIEW · TEST DATA ONLY</span><a class="preview-qa-link" href="./qa.html">Device checklist</a>');
  if(!html.includes('preview-flag'))throw Error('Could not add visible preview marker.');
  save('index.html',html);
 
@@ -72,7 +74,7 @@ export function buildRc1Preview({
  save('js/preview-bootstrap.js',boot);
 
  let css=load('css/style.css');
- css+='\n/* Test-only visual marker, absent from the live app. */\n.preview-flag{display:inline-block;margin-top:4px;font-size:10px;font-weight:850;color:#913c23;background:#fff1e8;padding:3px 6px;border:1px solid #edc4b2;border-radius:5px;letter-spacing:.3px}\n';
+ css+='\n/* Preview-only marker and checklist link, absent from production. */\n.preview-flag{display:inline-block;margin-top:4px;font-size:10px;font-weight:850;color:#913c23;background:#fff1e8;padding:3px 6px;border:1px solid #edc4b2;border-radius:5px;letter-spacing:.3px}\n.preview-qa-link{display:inline-block;margin:4px 0 0 7px;font-size:11px;font-weight:750;text-decoration:underline}\n';
  save('css/style.css',css);
 
  const manifest=JSON.parse(load('manifest.webmanifest'));
@@ -101,6 +103,8 @@ export function buildRc1Preview({
   'The app refuses to start on the existing kdg-007.github.io origin or an',
   'insecure non-local HTTP origin. localhost HTTP is allowed for developer tests only.',
   '',
+  'The Device checklist link in the preview runs local-only checks and six iPhone',
+  'observations; it does not submit data or certify a device automatically.',
   'A future approved release must still pass a physical iPhone standalone PWA smoke test.',
   ''
  ].join('\n');

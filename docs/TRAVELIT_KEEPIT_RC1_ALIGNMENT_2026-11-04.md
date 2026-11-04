@@ -38,3 +38,9 @@ KeepIt's `PLATFORM_CONTRACT_V1.md` is Gate A frozen / Gate B partial and **NOT R
 - **LiveIt:** remains separate; no calendar event transport or automatic projection has been certified.
 
 Nothing in this alignment authorizes an endpoint, credentials, production migration, or new subscription. No production data or deployed site is changed.
+
+## W17O owner-side update (November 4, later checkpoint)
+
+KeepIt's private W17O broker passed 22/22 synthetic tests. Its identity validation is **hard-scoped to LiveIt, not TravelIt**. It cannot dispatch native note edits, is not imported into the compiled KeepIt app, and has no verified OneDrive readback or physical-device acceptance. Do not reuse it under a TravelIt identity or treat its synthetic status as authorization. TravelIt remains disconnected pending a separate reviewed provider integration.
+
+The preview package now includes a read-only device checklist page with six manual observations. It is a QA convenience, not evidence of completed iPhone testing.
