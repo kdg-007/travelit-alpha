@@ -46,5 +46,8 @@ test('RC1 preview package is visibly distinct and cannot open the production Ind
   assert.match(read('qa.html'),/iPhone acceptance checklist/);
   assert.match(read('index.html'),/Device checklist/);
   assert.match(read('js/preview-readiness.js'),/collectPreviewReadiness/);
+  assert.match(read('_headers'),/X-Robots-Tag: noindex, nofollow/);
+  assert.match(read('_headers'),/Cache-Control: no-store/);
+  assert.match(read('robots.txt'),/Disallow: \\/?/);
  }finally{rmSync(temp,{force:true,recursive:true});}
 });

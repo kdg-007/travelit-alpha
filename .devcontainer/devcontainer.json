@@ -10,5 +10,6 @@
       "onAutoForward": "notify"
     }
   },
-  "postStartCommand": "nohup node scripts/serve-rc1-preview.mjs > /tmp/travelit-rc1-preview.log 2>&1 < /dev/null &"
+  "postStartCommand": "node scripts/ensure-rc1-preview.mjs",
+  "postAttachCommand": "node scripts/ensure-rc1-preview.mjs"
 }

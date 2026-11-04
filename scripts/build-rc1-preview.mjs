@@ -113,6 +113,10 @@ export function buildRc1Preview({
   ''
  ].join('\n');
  save('PREVIEW_README.md',readme);
+ // Cloudflare Pages honors _headers; keep the disposable QA out of search indexes.
+ // These files carry no credentials and do not create a deployed site.
+ save('_headers','/*\n  Cache-Control: no-store\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  X-Robots-Tag: noindex, nofollow\n');
+ save('robots.txt','User-agent: *\nDisallow: /\n');
  if(!existsSync(join(outputDir,'js/preview-bootstrap.js')))throw Error('Preview bootstrap missing.');
  const integrity=sealPreviewDirectory(outputDir);
  return {outputDir,cache,assetCount:assets.length,appEntry:entry,integrityFiles:integrity.files.length};
